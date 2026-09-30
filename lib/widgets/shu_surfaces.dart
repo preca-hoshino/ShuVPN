@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/shuyo_text_styles.dart';
 import '../app/theme.dart';
+import '../core/auth/auth_constants.dart';
 
 /// Solid rounded container used for grouped content.
 ///
@@ -110,6 +111,87 @@ class ShuStatusSlot extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 一个业务系统在列表里的一行：图标 + 系统名 + 域名。
+///
+/// 两处共用这一行 —— 账户管理的凭据行（右侧挂 [ShuStatusSlot] 报「连上没有」）
+/// 与引导页第 3 页的系统清单（右侧留空：用户还没登录，没有状态可报）。
+///
+/// 共用的理由不是省几行代码，而是**同一件事只有一种说法**：系统的名字、
+/// 图标、域名在哪儿都一样，用户在看到「aTrust 网关」时不用分辨这是两回事。
+///
+/// 图标**不染色**。颜色留给状态文字（[ShuStatusSlot]），图标保留它自己的
+/// 语义 —— 一个染成蓝色的盾牌同时说了两件事，色盲用户还读不出区别。
+class ShuSystemTile extends StatelessWidget {
+  const ShuSystemTile({super.key, required this.kind, this.trailing});
+
+  final ShuOAuthTargetKind kind;
+
+  /// 右侧那一格。账号管理放状态槽，引导页不传。
+  final Widget? trailing;
+
+  /// 行首图标。
+  ///
+  /// 写在 widget 层而不是给枚举加字段：`core/` 不依赖 `flutter/material`，
+  /// 而 `IconData` 是 material 的东西。三行 `switch` 换掉一层跨层依赖，值。
+  static IconData iconFor(ShuOAuthTargetKind kind) => switch (kind) {
+    ShuOAuthTargetKind.atrust => Icons.shield_moon_outlined,
+    ShuOAuthTargetKind.otp => Icons.pin_outlined,
+    ShuOAuthTargetKind.jwxt => Icons.calendar_month_outlined,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.shuyoColors;
+    return ListTile(
+      leading: Icon(iconFor(kind)),
+      title: Text(
+        kind.displayName,
+        style: ShuYoTextStyles.bodyCompact(color: colors.textPrimary),
+      ),
+      subtitle: Text(
+        kind.host,
+        style: ShuYoTextStyles.meta(color: colors.textTertiary),
+      ),
+      // 图标相对**两行文字**居中；默认的 `threeLine` 会把它按标题行顶高。
+      titleAlignment: ListTileTitleAlignment.center,
+      trailing: trailing,
+    );
+  }
+}
+
+/// 系统 VPN 授权的**状态词与语义色**。
+///
+/// 三页要说同一句话：设置页的「系统授权状态」、引导页第 1 页的权限清单、
+/// 以及将来任何一处提到这件事的地方。写成一个函数而不是各页私有的一份
+/// switch，理由与 [ShuStatusSlot] 一样 —— 「已授权」这个词在哪儿都得是这四个
+/// 字、都得是 `accent` 蓝，否则用户要在每个页面各学一次读法。
+///
+/// 读法与账号管理里那几行凭据一致：可用是 `accent` 蓝、还没解决是
+/// `warning`、没有结论是中性灰。
+///
+/// 取值是 `bool?` 而不是自带头尾状态的原因：`null` 在这里有确切含义 ——
+/// **还没问过系统**（见 `ConnectionController.vpnPrepared`），与「问过，
+/// 没给」是两件事，不能合并成 false。
+///
+/// **永远不返回 null 颜色**：调用方多半把它塞进 [ShuStatusSlot]，而颜色为
+/// null 时那一格会退回到普通取值的样子（右对齐的次要文字）——同一个状态在
+/// 两种取值下长得不一样。
+({String text, Color color}) shuVpnPermissionStatus(
+  BuildContext context, {
+  required bool supported,
+  required bool? prepared,
+}) {
+  final colors = context.shuyoColors;
+  if (!supported) {
+    return (text: '仅 Android 支持', color: colors.textTertiary);
+  }
+  return switch (prepared) {
+    true => (text: '已授权', color: colors.accent),
+    false => (text: '未授权', color: colors.warning),
+    null => (text: '检查中…', color: colors.textTertiary),
+  };
 }
 
 /// Neutral placeholder for a feature that has no data yet.

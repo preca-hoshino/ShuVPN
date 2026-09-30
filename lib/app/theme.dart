@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_sangfor/flutter_sangfor.dart';
 
+import 'page_transitions.dart';
 import 'shuyo_text_styles.dart';
 
 /// Corner radii used across the shell.
@@ -85,6 +86,13 @@ class ShuYoThemeSpec {
       colorScheme: scheme,
       scaffoldBackgroundColor: colors.background,
       extensions: [colors],
+      // 二级页统一走「从右侧滑入 / 沿原路收回」（见
+      // [ShuSharedAxisXPageTransitionsBuilder]）。放在主题里而不是每条路由
+      // 自己配：这个应用里的二级页有九个入口，逐个写必然会漏，而漏掉的那
+      // 一个会变成「只有这一页的转场不一样」这种最难查的不一致。
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: shuPageTransitionsBuilders(),
+      ),
       textTheme: ShuYoTextStyles.theme.apply(
         bodyColor: colors.textPrimary,
         displayColor: colors.textPrimary,

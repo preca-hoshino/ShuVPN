@@ -124,6 +124,23 @@ void main() {
       }
       expect(ShuOAuthTargets.byId('webvpn'), isNull);
     });
+
+    test('the displayed host matches the system it names', () {
+      // 账号页的凭据行与引导页第 3 页的清单都把 `kind.host` 当副标题印出来。
+      // 它是**手写的**（见枚举文档：不从完整回调地址反推），所以必须有东西
+      // 钉住它 —— 否则改了 `landingUrl` 却忘了改这一个，界面上会指着别的域名，
+      // 而那是排障时最容易信错的一句话。
+      for (final target in ShuOAuthTargets.all) {
+        final urls = <String?>[target.landingUrl, target.redirectUri];
+        for (final url in urls) {
+          expect(
+            Uri.parse(url!).host,
+            target.kind.host,
+            reason: '${target.kind.id} 的 ${target.kind.host} 与实际地址不一致',
+          );
+        }
+      }
+    });
   });
 
   group('login page params discovery', () {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../app/page_transitions.dart';
 import '../../app/shuyo_text_styles.dart';
 import '../../app/theme.dart';
 import '../../core/account/account_center.dart';
@@ -23,6 +24,13 @@ import 'login_form.dart';
 /// 页面有两个状态，而不是两页：
 ///   `_signingIn == false` → 概览（账户 + 各个 OAuth 系统的凭据状态）
 ///   `_signingIn == true`  → 登录表单
+///
+/// 两个状态之间的切换走 [ShuSharedAxisXSwitcher]：登录表单从右侧滑进来、概览
+/// 往左让出四分之一屏，与「设置 → 账户管理」那一步同一套动作。
+///
+/// ⚠️ 两块内容**一直**在树上，所以在概览里也能读到 `_loginFormKey.currentState`
+/// —— 这既是上面那些 `?.` 还留着的理由，也是为什么离开登录时要自己收键盘
+/// （以前是整棵子树被卸载，焦点跟着一起没了）。
 ///
 /// 概览分成**两块**，每块由一行小字标题带出：
 ///
@@ -139,13 +147,21 @@ class _AccountPageState extends State<AccountPage> {
           backEnabled: !_busy,
         ),
         body: SafeArea(
-          child: _signingIn
-              ? ShuLoginForm(
-                  key: _loginFormKey,
-                  onChanged: () => setState(() {}),
-                  onCompleted: _finishLogin,
-                )
-              : _overview(context, account),
+          // 两块都在树上，`showFront` 只报「哪一块在前面」；位置由换页器算。
+          //
+          // 为什么不做成 `_signingIn ? 表单 : 概览`：那样中间什么都没有，切换是
+          // 一帧之内对调的 —— 这正是以前「进入登录状态没有动画」的原因。
+          child: ShuSharedAxisXSwitcher(
+            showFront: _signingIn,
+            // 两块都按 `ShuLoginForm` / `_overview` 的常态造一次，之后每帧只
+            // 挪位置：它们是同一个 widget 实例，不会跟着动画反复重建。
+            front: ShuLoginForm(
+              key: _loginFormKey,
+              onChanged: () => setState(() {}),
+              onCompleted: _finishLogin,
+            ),
+            back: _overview(context, account),
+          ),
         ),
       ),
     );
@@ -190,10 +206,23 @@ class _AccountPageState extends State<AccountPage> {
 
   // ------------------------------------------------------------------ 登录
 
-  void _openLogin() {
+  /// 概览 ⇄ 登录表单。
+  ///
+  /// 这里只切**逻辑**状态，视觉上的换页由 [ShuSharedAxisXSwitcher] 自己演。
+  /// 两者分开是必要的：标题栏、返回键、`PopScope` 都要在按下的那一刻就切过去，
+  /// 不能等动画 —— 否则「验证身份」这几个字会慢半拍才出现。
+  void _setSigningIn(bool value) {
+    if (_signingIn == value) return;
+    if (!value) {
+      // 表单不再被卸载（见 [ShuSharedAxisXSwitcher] 的类文档），所以焦点得自己
+      // 收：否则键盘会跟着一块被藏起来的输入框留在屏幕上。
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     _loginFormKey.currentState?.reset();
-    setState(() => _signingIn = true);
+    setState(() => _signingIn = value);
   }
+
+  void _openLogin() => _setSigningIn(true);
 
   void _back() {
     final form = _loginFormKey.currentState;
@@ -202,16 +231,12 @@ class _AccountPageState extends State<AccountPage> {
     _leaveLogin();
   }
 
-  void _leaveLogin() {
-    _loginFormKey.currentState?.reset();
-    setState(() => _signingIn = false);
-  }
+  void _leaveLogin() => _setSigningIn(false);
 
   /// 登录成功后回概览，而不是退出页面 —— 用户还要看凭据换到了没有。
   void _finishLogin() {
-    _loginFormKey.currentState?.reset();
     if (!mounted) return;
-    setState(() => _signingIn = false);
+    _setSigningIn(false);
   }
 
   Future<void> _logout(BuildContext context, AccountCenter account) async {
@@ -375,10 +400,14 @@ class _AccountTile extends StatelessWidget {
 
 /// 一条**只读**的系统凭据。
 ///
-/// 没有 `onTap`、没有箭头、也没有状态胶囊。状态写在**右侧**的行内小字上，
-/// 参照 ShuYo 的 `_accountTile` —— 那边也是「图标保持默认色，状态是文字」。
-/// 我们只改一处：ShuYo 把状态紧贴在名称后面（`名称 已登录`），这里改成
-/// **右对齐**，让同组几行的状态落在同一条竖线上，扫一眼就能比出哪个没连上。
+/// 行本身交给 [ShuSystemTile]（图标 + 系统名 + 域名）—— 引导页第 3 页那张
+/// 清单用的是同一个组件，所以两处的名字与域名逐字一致。这里只补上一件
+/// 那一页没有的事：**状态**。
+///
+/// 状态写在**右侧**的行内小字上，参照 ShuYo 的 `_accountTile` —— 那边也是
+/// 「图标保持默认色，状态是文字」。我们只改一处：ShuYo 把状态紧贴在名称后面
+/// （`名称 已登录`），这里改成**右对齐**（[ShuStatusSlot]），让同组几行的状态
+/// 落在同一条竖线上，扫一眼就能比出哪个没连上。
 ///
 /// 图标**不染色**。之前用颜色表示状态，结果是「蓝盾牌」既是「可用」又占走了
 /// 图标本身的语义；而且色盲用户读不出区别。颜色留给状态文字。
@@ -391,13 +420,12 @@ class _CredentialRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.shuyoColors;
     final target = ShuOAuthTargets.byId(credential.systemId);
+    // 凭据只可能来自注册表里那三个系统（`ShuOAuthTargets.all`），查不到
+    // 说明数据坏了 —— 不画一行什么都没有的空壳，也不崩。
+    if (target == null) return const SizedBox.shrink();
     final status = _status(colors);
-    return ListTile(
-      leading: Icon(_iconFor(credential.systemId)),
-      title: Text(
-        target?.kind.displayName ?? credential.systemId,
-        style: ShuYoTextStyles.bodyCompact(color: colors.textPrimary),
-      ),
+    return ShuSystemTile(
+      kind: target.kind,
       trailing: ShuStatusSlot(text: status.text, color: status.color),
     );
   }
@@ -429,11 +457,4 @@ class _CredentialRow extends StatelessWidget {
         return (text: '未连接', color: colors.textMuted);
     }
   }
-
-  static IconData _iconFor(String systemId) => switch (systemId) {
-    'atrust' => Icons.shield_moon_outlined,
-    'otp' => Icons.pin_outlined,
-    'jwxt' => Icons.calendar_month_outlined,
-    _ => Icons.vpn_key_outlined,
-  };
 }

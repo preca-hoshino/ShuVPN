@@ -312,17 +312,34 @@ abstract final class ShuOAuthTargets {
 }
 
 /// 系统标识。用枚举而不是字符串，让 `switch` 能穷尽检查。
+///
+/// [host] 是列表里给用户看的那个东西：系统的名字与它所在的域名。
+/// 两个地方共用它 —— 账户管理的凭据行、引导页第 3 页的系统清单 —— 所以
+/// 「教务系统」下面写的是哪个域名，在哪儿都是同一个答案。
+///
+/// 域名与 [ShuOAuthTarget] 里的 `landingUrl` / `redirectUri` 必须同源，
+/// 但**不从这里反推**：那些是完整的回调地址（带路径、带查询串），
+/// 反推一次就要处理各种拼法；这里写死、由测试钉住一致性。
 enum ShuOAuthTargetKind {
-  atrust('atrust', 'aTrust 隧道', 'SSL VPN 网关，用于建立全局隧道'),
-  otp('otp', 'OTP 令牌', '动态口令，每 30 秒轮换'),
-  jwxt('jwxt', '教务系统', '课表与成绩，JWGLXT');
+  atrust('atrust', 'aTrust 网关', 'atrust.shu.edu.cn', 'SSL VPN 网关，用于建立全局隧道'),
+  otp('otp', 'OTP 令牌', 'otp.shu.edu.cn', '动态口令，每 30 秒轮换'),
+  jwxt('jwxt', '教务系统', 'jwxt.shu.edu.cn', '课表与成绩，JWGLXT');
 
-  const ShuOAuthTargetKind(this.id, this.displayName, this.description);
+  const ShuOAuthTargetKind(
+    this.id,
+    this.displayName,
+    this.host,
+    this.description,
+  );
 
   /// 系统 key，等于域名首段，也是持久化与路由里用的标识。
   final String id;
 
   final String displayName;
+
+  /// 系统所在域名 —— 列表里那一行的副标题。
+  final String host;
+
   final String description;
 
   static ShuOAuthTargetKind? fromId(String? id) {
