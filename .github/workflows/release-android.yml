@@ -1,0 +1,254 @@
+name: Android Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish signed arm64 and armv7a APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read and validate release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Android releases must be created from the main branch."
+            exit 1
+          fi
+
+          app_version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n 1)"
+          if [[ ! "$app_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\+[0-9]+$ ]]; then
+            echo "pubspec.yaml must contain a version such as 0.4.7+19."
+            exit 1
+          fi
+
+          version_name="${app_version%%+*}"
+          build_number="${app_version##*+}"
+          release_tag="v${version_name}"
+          apk_name="ShuVPN-v${version_name}.apk"
+
+          tag_exists=false
+          if git rev-parse --verify --quiet "refs/tags/${release_tag}" >/dev/null; then
+            tag_exists=true
+            tag_commit="$(git rev-list -n 1 "$release_tag")"
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Tag ${release_tag} points to ${tag_commit}, not this commit (${GITHUB_SHA})."
+              echo "Update pubspec.yaml before releasing changed code."
+              exit 1
+            fi
+            echo "Tag ${release_tag} already points to this commit; it can be reused."
+          fi
+
+          echo "app_version=${app_version}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${version_name}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${build_number}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${apk_name}" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=${tag_exists}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          previous_tag=""
+          while IFS= read -r candidate; do
+            if [[ "$candidate" != "$RELEASE_TAG" ]]; then
+              previous_tag="$candidate"
+              break
+            fi
+          done < <(git tag --merged "$GITHUB_SHA" --sort=-version:refname)
+
+          if [[ -n "$previous_tag" ]]; then
+            changelog_url="https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${RELEASE_TAG}"
+            notes="Full changelog: [${previous_tag}...${RELEASE_TAG}](${changelog_url})"
+          else
+            changelog_url="https://github.com/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}"
+            notes="Full commit history: [View all commits](${changelog_url})"
+          fi
+
+          echo "notes=${notes}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart and Flutter code
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Restore Android signing files
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || \
+                -z "$ANDROID_STORE_PASSWORD" || \
+                -z "$ANDROID_KEY_PASSWORD" || \
+                -z "$ANDROID_KEY_ALIAS" ]]; then
+            echo "One or more Android signing secrets are missing."
+            exit 1
+          fi
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode > android/shuvpn-release.jks
+          chmod 600 android/shuvpn-release.jks
+
+          # storeFile is resolved against android/ (rootProject.file(...) in
+          # android/app/build.gradle.kts), not against android/app.
+          printf '%s\n' \
+            "storePassword=$ANDROID_STORE_PASSWORD" \
+            "keyPassword=$ANDROID_KEY_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" \
+            "storeFile=shuvpn-release.jks" \
+            > android/key.properties
+          chmod 600 android/key.properties
+
+      - name: Build split APKs
+        run: |
+          flutter build apk \
+            --release \
+            --split-per-abi \
+            --build-name "${{ steps.version.outputs.version_name }}" \
+            --build-number "${{ steps.version.outputs.build_number }}"
+
+      - name: Prepare release assets
+        id: assets
+        shell: bash
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk_name }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          # arm64-v8a covers every handset the campus app realistically lands
+          # on, but armeabi-v7a is shipped too: the vendored SDK carries a
+          # 32-bit native library, so publishing arm64 alone would strand the
+          # phones that library exists for.
+          publish() {
+            local abi="$1" name="$2"
+            local source="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            if [[ ! -f "$source" ]]; then
+              echo "Expected ${abi} APK was not produced: ${source}"
+              exit 1
+            fi
+            cp "$source" "dist/${name}"
+            (cd dist && sha256sum "${name}" > "${name}.sha256")
+          }
+
+          publish arm64-v8a "${APK_NAME}"
+          publish armeabi-v7a "${APK_NAME%.apk}-armv7a.apk"
+
+      - name: Verify the release signature
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The release build silently falls back to the debug key when
+          # key.properties is missing or blank, so without this check a
+          # "release" could ship debug-signed and nothing would notice.
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$sdk" || ! -d "$sdk/build-tools" ]]; then
+            echo "Android SDK build-tools not found (ANDROID_HOME is ${ANDROID_HOME:-unset})."
+            exit 1
+          fi
+
+          apksigner="$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" ]]; then
+            echo "apksigner not found under $sdk/build-tools"
+            exit 1
+          fi
+
+          for apk in dist/*.apk; do
+            echo "--- ${apk} ---"
+            "$apksigner" verify --print-certs "$apk" | tee /tmp/certs.txt
+            if grep -q "CN=Android Debug" /tmp/certs.txt; then
+              echo "${apk} is signed with the debug key."
+              exit 1
+            fi
+          done
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.release_tag }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          TAG_EXISTS: ${{ steps.version.outputs.tag_exists }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists. Edit or delete that release, or update pubspec.yaml."
+            exit 1
+          fi
+
+          release_args=(
+            "$RELEASE_TAG"
+            dist/*
+            --repo "$GITHUB_REPOSITORY"
+            --title "ShuVPN $RELEASE_TAG"
+            --notes "$RELEASE_NOTES"
+          )
+          if [[ "$TAG_EXISTS" == "true" ]]; then
+            release_args+=(--verify-tag)
+          else
+            release_args+=(--target "$GITHUB_SHA")
+          fi
+
+          gh release create "${release_args[@]}"
+
+      - name: Remove signing files
+        if: always()
+        run: |
+          rm -f android/shuvpn-release.jks
+          rm -f android/key.properties
