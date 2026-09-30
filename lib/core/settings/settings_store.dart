@@ -57,6 +57,11 @@ class SettingsStore extends ChangeNotifier {
   static const String _kLogEnabled = 'settings.logEnabled';
   static const String _kLogLevel = 'settings.logLevel';
 
+  /// 「新用户引导走完了没有」。
+  ///
+  /// 见 [welcomeCompleted]。
+  static const String kWelcomeCompletedKey = 'settings.welcomeCompleted';
+
   /// 协议开关的键前缀，后面接 [ShuProtocol.id]。
   static const String _kProtocolPrefix = 'settings.protocol.';
 
@@ -92,6 +97,21 @@ class SettingsStore extends ChangeNotifier {
   }
 
   set themeMode(ThemeMode value) => _writeString(_kThemeMode, value.name);
+
+  // ------------------------------------------------------------- onboarding
+
+  /// 新用户引导（`/welcome`）是否已经走完。
+  ///
+  /// 出厂 **false** —— 全新安装的第一屏就是引导，这一点由路由的重定向保证
+  /// （见 `createShuRouter` 的 `redirect`）。老版本升上来的用户不在其中：
+  /// 他们已经在用这个应用了，再拦一次「欢迎使用」没有意义，
+  /// 所以 `_migrateToV3` 会把这一项直接写成 true。
+  ///
+  /// 只有**登录成功**才会把它置真。中途退出（VPN 权限没给、登录失败）不写，
+  /// 下次冷启动仍在引导里 —— 引导的三个步骤正是「没做完就没法用」的三件事。
+  bool get welcomeCompleted => _prefs.getBool(kWelcomeCompletedKey) ?? false;
+
+  set welcomeCompleted(bool value) => _writeBool(kWelcomeCompletedKey, value);
 
   // ----------------------------------------------------------- connection
 

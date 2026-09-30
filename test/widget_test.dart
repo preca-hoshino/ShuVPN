@@ -33,6 +33,10 @@ Future<void> _pumpApp(
 
   SharedPreferences.setMockInitialValues(<String, Object>{});
   final settings = await SettingsStore.load();
+  // 首启门默认是关着的（全新安装要看到引导），而这一整个文件测的是引导
+  // **之后**的界面。模拟一位已经走完引导的用户，比在每个用例里绕过重定向
+  // 干净：这层判断正好也是引导唯一的长期痕迹。
+  settings.welcomeCompleted = true;
   await tester.pumpWidget(ShuVpnApp(settings: settings));
   await tester.pump();
 }
@@ -616,7 +620,7 @@ void main() {
 
     // Every registered system gets a row, academic first: it is the one that
     // answers "who am I", so it should report before the tunnel does.
-    for (final name in <String>['教务系统', 'aTrust 隧道', 'OTP 令牌']) {
+    for (final name in <String>['教务系统', 'aTrust 网关', 'OTP 令牌']) {
       expect(
         find.descendant(of: find.byType(ListTile), matching: find.text(name)),
         findsOneWidget,
@@ -637,6 +641,9 @@ void main() {
     );
 
     // Endpoints are not part of the account page — that was diagnostic noise.
+    // The host alone is a caption now (every row carries one); what stays out
+    // is the path half of an endpoint, which is what made that list useful
+    // only to whoever was debugging.
     expect(find.textContaining('shu.edu.cn/'), findsNothing);
 
     // No WebVPN section — that system is out of scope.

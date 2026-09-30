@@ -26,7 +26,11 @@ class ShuVpnApp extends StatefulWidget {
 
 class _ShuVpnAppState extends State<ShuVpnApp> {
   /// Built once per app so navigation state cannot leak between instances.
-  late final GoRouter _router = createShuRouter();
+  ///
+  /// 设置要传进路由：首启门（`welcomeCompleted`）是**重定向**的判据，而重定向
+  /// 必须能读到它。传的是实例而不是值 —— 引导页写完标记后，同一次跳转会重新
+  /// 求值，读到的是新值。
+  late final GoRouter _router = createShuRouter(settings: widget.settings);
 
   @override
   Widget build(BuildContext context) {

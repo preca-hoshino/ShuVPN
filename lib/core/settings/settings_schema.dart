@@ -20,7 +20,9 @@ abstract final class ShuSettingsSchema {
   /// * 1 —— 首个带版本号的版本。
   /// * 2 —— 数据面拆成三条（系统 VPN / 本机 SOCKS5 / 本机 HTTP），
   ///   并去掉「资源外直连」。
-  static const current = 2;
+  /// * 3 —— 新增新用户引导（`settings.welcomeCompleted`）。老用户视为
+  ///   已完成，不弹引导。
+  static const current = 3;
 
   /// 记录已完成的版本。缺失（0）表示这是从没有版本号的旧版本升上来的。
   static const versionKey = 'settings.schema.version';
@@ -70,6 +72,16 @@ class ShuSettingsStore {
     if (from < 2) {
       await _migrateToV2();
     }
+    // ⚠️ `from >= 1` 是这条分支的门槛，不是多余的判断。
+    //
+    // 缺失版本号（`from == 0`）**不等于**「很老的版本」—— 它同时意味着
+    // 「这台设备从来没存过任何东西」，也就是一次干净安装。把 v3 那次写入
+    // 也算进去，新装用户在第一次启动时就会被标成「引导已完成」，引导永远
+    // 不会出现。真正装过旧版本的设备磁盘上一定有版本号（v1 与版本号是同一次
+    // 更新引入的），所以 `from >= 1` 正好是「装过」的判据。
+    if (from >= 1 && from < 3) {
+      await _migrateToV3();
+    }
 
     await _prefs.setInt(
       ShuSettingsSchema.versionKey,
@@ -101,5 +113,21 @@ class ShuSettingsStore {
   /// * `settings.socksPort` / `settings.socksListen` —— 仍然是 SOCKS5 那一组。
   Future<void> _migrateToV2() async {
     await _prefs.remove('settings.proxyDirectFallback');
+  }
+
+  /// v2 → v3：新增新用户引导。
+  ///
+  /// **这里唯一要写的键是「引导已完成」**，而且写的是 `true`。
+  ///
+  /// 迁移只对**已经在用这个应用的人**发生。[migrateIfNeeded] 用
+  /// `from >= 1` 拦掉了「从来没存过版本号」的那一类 —— 那是干净安装，不是
+  /// 老版本；把他们当成新用户拦在「欢迎使用」前面，是把一次升级伪装成一次
+  /// 重装，而反过来（把新装用户当成老用户）直接让引导永远不出现。
+  ///
+  /// 键名直接写在这里而不是引 `SettingsStore.kWelcomeCompletedKey`：
+  /// 这一层管的是**磁盘上的历史语义**，不该随着普通设置常量的改名而漂移。
+  /// 两者一旦不一致，表现是「升级后所有人重新走一遍引导」，很难追溯到这。
+  Future<void> _migrateToV3() async {
+    await _prefs.setBool('settings.welcomeCompleted', true);
   }
 }

@@ -74,7 +74,9 @@ void main() {
       expect(prefs.containsKey('settings.proxyDirectFallback'), isTrue);
     });
 
-    test('v0（没有版本号）会连着跑完 v1 与 v2', () async {
+    test('v0（没有版本号）会连着跑完 v1 与 v2，但不会跑 v3', () async {
+      // v0 不等于「很老的版本」—— 它同时意味着一次干净安装，而引导不能
+      // 在新装用户的第一次启动时就被标成已完成。判据是 `from >= 1`。
       SharedPreferences.setMockInitialValues(<String, Object>{
         'settings.lastServer': 'old.example',
         'settings.proxyDirectFallback': true,
@@ -84,10 +86,38 @@ void main() {
 
       expect(prefs.containsKey('settings.lastServer'), isFalse);
       expect(prefs.containsKey('settings.proxyDirectFallback'), isFalse);
+      expect(prefs.getBool('settings.welcomeCompleted'), isNull);
       expect(
         prefs.getInt(ShuSettingsSchema.versionKey),
         ShuSettingsSchema.current,
       );
+    });
+  });
+
+  group('v2 → v3', () {
+    test('装过旧版本的设备视为已完成引导，旧设置保留', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        ShuSettingsSchema.versionKey: 2,
+        'settings.socksPort': 2233,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await ShuSettingsStore(prefs).migrateIfNeeded();
+
+      expect(prefs.getBool('settings.welcomeCompleted'), isTrue);
+      expect(prefs.getInt('settings.socksPort'), 2233);
+      expect(
+        prefs.getInt(ShuSettingsSchema.versionKey),
+        ShuSettingsSchema.current,
+      );
+    });
+
+    test('干净安装什么都没写 —— 引导该出现', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final prefs = await SharedPreferences.getInstance();
+      await ShuSettingsStore(prefs).migrateIfNeeded();
+
+      expect(prefs.getBool('settings.welcomeCompleted'), isNull);
+      expect(prefs.getInt(ShuSettingsSchema.versionKey), isNotNull);
     });
   });
 }
