@@ -247,6 +247,8 @@ void main() {
     tester,
   ) async {
     await _pumpPhone(tester);
+    // 遮罩铺满整层、抽屉压在它上面，所以「遮罩底 − 抓手顶」量到的正是抽屉
+    // 露出来的那一档高度 —— 未拉开时它等于 `_ConnectionDrawer.peekHeight`。
     final earlyPeek =
         tester.getRect(find.byKey(ConnectPage.scrimKey)).bottom -
         tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
@@ -254,7 +256,13 @@ void main() {
     final settledPeek =
         tester.getRect(find.byKey(ConnectPage.scrimKey)).bottom -
         tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
-    expect([earlyPeek, settledPeek, 0], [0, 0, 0]);
+    expect(settledPeek, closeTo(earlyPeek, 1), reason: '吸附落地不该让抽屉跳一下');
+    expect(
+      settledPeek,
+      inInclusiveRange(48, 160),
+      reason: '未拉开那一档只放得下把手与状态行，不该长到把大圆顶走',
+    );
+
     await tester.tap(find.byKey(ConnectPage.grabberKey));
     await tester.pumpAndSettle();
 

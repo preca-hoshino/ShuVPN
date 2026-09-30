@@ -273,13 +273,6 @@ class _ConnectionDrawerState extends State<_ConnectionDrawer> {
     super.dispose();
   }
 
-  void _probe() {
-    if (!_sheet.isAttached) {
-      return;
-    }
-    debugPrint('DRAWER size=${_sheet.size} min=$_min max=$_max');
-  }
-
   /// 请求动画到另一档。拖拽手势由抽屉自己处理，这里只管点。
   void _toggle() => _animateTo(_expanded ? _min : _max);
 
@@ -310,7 +303,6 @@ class _ConnectionDrawerState extends State<_ConnectionDrawer> {
         );
         _min = min;
         _max = max;
-        WidgetsBinding.instance.addPostFrameCallback((_) => _probe());
 
         // 只听控制器，不重建下面那棵树：`child` 是抽屉自己，它的变化由
         // `DraggableScrollableSheet` 内部的状态驱动，与这里的重建无关。
