@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build and publish signed arm64 and armv7a APKs
+    name: Build and publish a signed arm64 APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -144,15 +144,16 @@ jobs:
             > android/key.properties
           chmod 600 android/key.properties
 
-      - name: Build split APKs
+      - name: Build the release APK
         run: |
           flutter build apk \
             --release \
             --split-per-abi \
+            --target-platform android-arm64 \
             --build-name "${{ steps.version.outputs.version_name }}" \
             --build-number "${{ steps.version.outputs.build_number }}"
 
-      - name: Prepare release assets
+      - name: Prepare release asset
         id: assets
         shell: bash
         env:
@@ -160,25 +161,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          # 32-bit is not supported. The build above is restricted to arm64
+          # with --target-platform, so this is the only APK there is to ship.
+          source_apk="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          if [[ ! -f "$source_apk" ]]; then
+            echo "Expected arm64-v8a APK was not produced: $source_apk"
+            exit 1
+          fi
+
           mkdir -p dist
-
-          # arm64-v8a covers every handset the campus app realistically lands
-          # on, but armeabi-v7a is shipped too: the vendored SDK carries a
-          # 32-bit native library, so publishing arm64 alone would strand the
-          # phones that library exists for.
-          publish() {
-            local abi="$1" name="$2"
-            local source="build/app/outputs/flutter-apk/app-${abi}-release.apk"
-            if [[ ! -f "$source" ]]; then
-              echo "Expected ${abi} APK was not produced: ${source}"
-              exit 1
-            fi
-            cp "$source" "dist/${name}"
-            (cd dist && sha256sum "${name}" > "${name}.sha256")
-          }
-
-          publish arm64-v8a "${APK_NAME}"
-          publish armeabi-v7a "${APK_NAME%.apk}-armv7a.apk"
+          cp "$source_apk" "dist/${APK_NAME}"
+          (cd dist && sha256sum "${APK_NAME}" > "${APK_NAME}.sha256")
 
       - name: Verify the release signature
         shell: bash
