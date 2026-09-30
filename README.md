@@ -21,7 +21,10 @@ Android 版本可以打开 [release 页面](https://github.com/preca-hoshino/Shu
 
 ### HarmoneyOS
 > 特指 	HarmonyOS 5.0 及其未来版本的系统
-目前正在全力适配中，敬请期待。HarmonyOS 4.X 及其以前版本系统请使用 Android 版本安装包。
+
+目前正在全力适配中，敬请期待。
+
+HarmonyOS 4.X 及其以前版本系统请使用 Android 版本安装包。
 
 ### iOS/iPadOS
 目前暂时没有 ios/iPadOS 平台的适配计划。
