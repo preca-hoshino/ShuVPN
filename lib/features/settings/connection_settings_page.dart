@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -146,6 +144,13 @@ class _ShuConnectionSettingsPageState extends State<ShuConnectionSettingsPage> {
     // 下一次建接口才被读。授权状态那一行例外（见下）：它是只读的观测。
     final locked = connection.tunnelUp;
     final editable = !locked && !connection.busy;
+    // 授权状态这一行要说的那句话，与引导页第 1 页共用（见
+    // `shuVpnPermissionStatus`）：同一件事在两个页面上不能有第二种读法。
+    final status = shuVpnPermissionStatus(
+      context,
+      supported: connection.vpnSupported,
+      prepared: connection.vpnPrepared,
+    );
 
     return Stack(
       // `expand` 而不是默认的 `loose`：里面那个 `ShuSettingsSubPage` 是个
@@ -195,14 +200,14 @@ class _ShuConnectionSettingsPageState extends State<ShuConnectionSettingsPage> {
             SettingsRow(
               icon: Icons.verified_user_outlined,
               title: '系统授权状态',
-              value: _permissionLabel(connection),
-              valueColor: _permissionColor(context, connection),
+              value: status.text,
+              valueColor: status.color,
               // 未连接时点它可以补一次授权（授权也可以在系统设置里被撤销，
               // 所以这一行是只读观测 + 一个重新询问的入口）。隧道跑起来之后
               // 连它也封住 —— 这一页在运行期「整页不可改」是一条不打折的
               // 规则，留一个例外只会让人以为别的行说不定也能点。
               enabled: !locked,
-              onTap: _isAndroid && !locked
+              onTap: connection.vpnSupported && !locked
                   ? () => _requestPermission(connection)
                   : null,
             ),
@@ -230,39 +235,7 @@ class _ShuConnectionSettingsPageState extends State<ShuConnectionSettingsPage> {
     );
   }
 
-  static bool get _isAndroid => Platform.isAndroid;
-
   static String _portLabel(int port) => port == 0 ? '自动' : '$port';
-
-  static String _permissionLabel(ConnectionController connection) {
-    if (!_isAndroid) return '仅 Android 支持';
-    return switch (connection.vpnPrepared) {
-      true => '已授权',
-      false => '未授权',
-      null => '检查中…',
-    };
-  }
-
-  /// 授权状态的颜色。
-  ///
-  /// 与「账号管理」里那几行凭据状态是**同一个组件**（`ShuStatusSlot`）、
-  /// 同一套语义色：可用是 `accent` 蓝，不可用是 `warning`，还没结论是中性
-  /// 灰。两页的状态读法一致，用户不用在两个地方各学一次。
-  ///
-  /// **永远不给 null**：这个值一旦为 null，这一行就会退回到普通设置值的
-  /// 渲染（右对齐的次要文字），于是同一个状态在两种取值下长得不一样。
-  static Color _permissionColor(
-    BuildContext context,
-    ConnectionController connection,
-  ) {
-    final colors = context.shuyoColors;
-    if (!_isAndroid) return colors.textTertiary;
-    return switch (connection.vpnPrepared) {
-      true => colors.accent,
-      false => colors.warning,
-      null => colors.textTertiary,
-    };
-  }
 
   /// 拨某个通道的启用开关：设置写下来，顺手把这一层拉起来或停下去。
   ///
@@ -304,7 +277,7 @@ class _ShuConnectionSettingsPageState extends State<ShuConnectionSettingsPage> {
     ConnectionController connection,
     bool value,
   ) async {
-    if (value && _isAndroid && connection.vpnPrepared != true) {
+    if (value && connection.vpnSupported && connection.vpnPrepared != true) {
       final granted = await connection.requestVpnPermission();
       if (!mounted) return;
       if (!granted) {

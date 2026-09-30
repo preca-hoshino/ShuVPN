@@ -21,6 +21,7 @@ import 'shu_android_vpn.dart';
 import 'shu_http_proxy.dart';
 import 'shu_traffic.dart';
 import 'vpn_packet_log.dart';
+import 'vpn_permission.dart';
 import 'vpn_routes.dart';
 
 /// Asks the user for an interactive code (SMS / TOTP).
@@ -81,14 +82,21 @@ class ConnectionDraft {
 /// `lib/core/auth/` 里（登录、凭据交换、教务解析），那些地方连
 /// `BuildContext` 都没有。现在全应用写同一份。
 class ConnectionController extends ChangeNotifier {
-  ConnectionController(this._settings, {ConnectionDraft? draft})
-    : _draft = draft ?? _draftFrom(_settings) {
+  ConnectionController(
+    this._settings, {
+    ConnectionDraft? draft,
+    ShuVpnPermission? vpnPermission,
+  }) : _vpnPermission = vpnPermission ?? const ShuVpnPermission(),
+       _draft = draft ?? _draftFrom(_settings) {
     // 设置页改完协议开关或服务器地址之后，这一层要立刻知道 ——
     // 「关掉当前协议 → 自动切到另一个可用的」就发生在这个回调里。
     _settings.addListener(_onSettingsChanged);
   }
 
   final SettingsStore _settings;
+
+  /// 系统 VPN 授权那一层。默认打给原生；测试换掉它（见 `ShuVpnPermission`）。
+  final ShuVpnPermission _vpnPermission;
 
   /// 从设置里拼出初始草稿。
   static ConnectionDraft _draftFrom(SettingsStore settings) => ConnectionDraft(
@@ -205,6 +213,13 @@ class ConnectionController extends ChangeNotifier {
 
   /// `VpnService` 的授权状态；`null` = 还没问过系统。
   bool? get vpnPrepared => _vpnPrepared;
+
+  /// 这台设备有没有「系统 VPN 授权」这回事 —— 只有 Android 有。
+  ///
+  /// 界面据此决定要不要摆出那一行、以及要不要把「未授权」说成「不支持」。
+  /// 由 [ConnectionController] 转述而不是让各处自己看 `Platform`：真正要去
+  /// 调原生的就是这一层，两边各判一次迟早会不一样。
+  bool get vpnSupported => _vpnPermission.isSupported;
 
   int? _boundSocksPort;
 
@@ -1366,16 +1381,16 @@ class ConnectionController extends ChangeNotifier {
 
   /// 问一次系统「VPN 权限给了没」。
   ///
-  /// 设置页每次进入都调它 —— 授权可能在系统设置里被手动取消，
+  /// 设置页与引导页每次进入都调它 —— 授权可能在系统设置里被手动取消，
   /// 缓存一个值就等于漏掉那种情况。
   Future<bool> refreshVpnPermission() async {
-    if (!Platform.isAndroid) {
+    if (!vpnSupported) {
       _vpnPrepared = false;
       notifyListeners();
       return false;
     }
     try {
-      _vpnPrepared = await ShuAndroidVpn.isPrepared;
+      _vpnPrepared = await _vpnPermission.isPrepared();
     } on Object catch (error) {
       ShuLog.w(ShuLogTag.vpn, '查询 VPN 授权失败：$error');
       _vpnPrepared = false;
@@ -1386,9 +1401,9 @@ class ConnectionController extends ChangeNotifier {
 
   /// 弹出系统 VPN 授权对话框。
   Future<bool> requestVpnPermission() async {
-    if (!Platform.isAndroid) return false;
+    if (!vpnSupported) return false;
     try {
-      final granted = await ShuAndroidVpn.requestPermission();
+      final granted = await _vpnPermission.request();
       _vpnPrepared = granted;
       if (!granted) ShuLog.w(ShuLogTag.vpn, '用户拒绝了 VPN 授权');
       notifyListeners();
@@ -1397,6 +1412,23 @@ class ConnectionController extends ChangeNotifier {
       ShuLog.w(ShuLogTag.vpn, '请求 VPN 授权失败：$error');
       return false;
     }
+  }
+
+  /// 「授权已经拿到手」——给引导页与设置页用的一句判断。
+  ///
+  /// 与 [requestVpnPermission] 的差别在于**先查再问**：已经授权过的设备直接
+  /// 返回 true，不弹第二次对话框。系统的 VPN 授权是**一次性**的（对话框只
+  /// 在你没授权时出现），但每次调 `requestPermission` 都要过一次原生往返，
+  /// 而这条路径在引导页上是「按一下按钮」的必经之路 —— 没必要为已经成立的
+  /// 事情再问一遍。
+  ///
+  /// **非 Android 平台返回 true**：那里根本没有系统 VPN 可授权，把引导卡在
+  /// 一个永远给不出的权限上没有意义。调用方据此把这一步当成「不需要做」，
+  /// 而不是「做失败了」。
+  Future<bool> ensureVpnPermission() async {
+    if (!vpnSupported) return true;
+    if (await refreshVpnPermission()) return true;
+    return requestVpnPermission();
   }
 
   /// 用 Android 的 `VpnService` 把整机流量接到隧道上。
