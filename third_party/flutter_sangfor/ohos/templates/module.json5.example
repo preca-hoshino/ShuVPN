@@ -1,0 +1,14 @@
+// Add this entry to your entry module's module.json5 "extensionAbilities"
+// array. The ability name must stay "SangforVpnExtAbility": the plugin
+// starts and stops it by that name.
+//
+// Note: if DevEco Studio does not recognize "type": "vpn", add "vpn" to the
+// extensionAbilities type enum in the SDK's toolchains/modulecheck/module.json
+// and restart the IDE (the build itself accepts the type regardless).
+"extensionAbilities": [
+  {
+    "name": "SangforVpnExtAbility",
+    "srcEntry": "./ets/vpnability/SangforVpnExtAbility.ets",
+    "type": "vpn"
+  }
+]

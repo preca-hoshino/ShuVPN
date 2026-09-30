@@ -1,0 +1,2 @@
+# Define obfuscation rules for this HAR.
+-disable-obfuscation

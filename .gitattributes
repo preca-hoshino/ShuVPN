@@ -1,0 +1,34 @@
+# 统一行尾，避免 Windows / macOS / Linux 之间来回签出时整仓文件被改写。
+# 必须在有历史之前定下来 —— 之后再改会让所有文件多出一次无意义的改动。
+* text=auto eol=lf
+
+# 二进制：不要做任何行尾或编码转换。
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.gif  binary
+*.ico  binary
+*.otf  binary
+*.ttf  binary
+*.woff binary
+*.woff2 binary
+*.jar  binary
+*.jks  binary
+*.keystore binary
+*.so   binary
+*.dll  binary
+*.a    binary
+*.exe  binary
+*.zip  binary
+*.apk  binary
+*.xlog binary
+
+# Windows 批处理必须是 CRLF；Gradle 的 Unix 包装脚本必须是 LF。
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+gradlew text eol=lf
+
+# 锁文件与生成物不参与 diff 折叠统计（它们本来就不该被人工阅读）。
+pubspec.lock linguist-generated=true
+*.lock       linguist-generated=true

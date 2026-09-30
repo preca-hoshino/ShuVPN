@@ -1,0 +1,6 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon background. Kept in sync with the flat fill of the legacy
+     tile in mipmap-*/ic_launcher.png by tool/generate_icons.ps1. -->
+<resources>
+    <color name="ic_launcher_background">#FF0084FF</color>
+</resources>

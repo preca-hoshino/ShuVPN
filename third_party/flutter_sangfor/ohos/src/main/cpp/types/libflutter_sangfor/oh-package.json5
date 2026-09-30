@@ -1,0 +1,6 @@
+{
+  "name": "libflutter_sangfor.so",
+  "types": "./Index.d.ts",
+  "version": "1.0.0",
+  "description": "SCM_RIGHTS file descriptor hand-off helpers."
+}

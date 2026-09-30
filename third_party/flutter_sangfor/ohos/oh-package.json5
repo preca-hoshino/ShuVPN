@@ -1,0 +1,12 @@
+{
+  "name": "flutter_sangfor",
+  "version": "1.0.0",
+  "description": "Sangfor aTrust/Easy Connect VPN plugin for OpenHarmony/HarmonyOS NEXT: system VPN via VpnExtensionAbility.",
+  "main": "Index.ets",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@ohos/flutter_ohos": "file:./har/flutter.har",
+    "libflutter_sangfor.so": "file:./src/main/cpp/types/libflutter_sangfor"
+  }
+}

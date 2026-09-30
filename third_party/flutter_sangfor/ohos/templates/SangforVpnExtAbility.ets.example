@@ -1,0 +1,10 @@
+// Copy this file into your entry module, for example
+// entry/src/main/ets/vpnability/SangforVpnExtAbility.ets, then register it
+// in the entry module's module.json5 (see module.json5.example).
+//
+// The plugin starts/stops the ability by the declared ability name, so keep
+// "name": "SangforVpnExtAbility" in module.json5.
+import { SangforVpnExtAbility as SangforVpnExtAbilityBase } from 'flutter_sangfor';
+
+export default class SangforVpnExtAbility extends SangforVpnExtAbilityBase {
+}
