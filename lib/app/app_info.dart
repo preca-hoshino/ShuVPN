@@ -5,8 +5,8 @@
 /// a way the user would notice. Bump these together with `pubspec.yaml`.
 abstract final class ShuAppInfo {
   static const String name = 'ShuVPN';
-  static const String version = '0.1.0';
-  static const String buildLabel = '1';
+  static const String version = '0.2.1';
+  static const String buildLabel = '2';
   static const String versionLabel = '$version ($buildLabel)';
 
   static const String tagline = '上大 aTrust RVPN 客户端';

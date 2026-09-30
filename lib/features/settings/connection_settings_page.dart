@@ -75,9 +75,9 @@ import '../../widgets/shu_surfaces.dart';
 ///
 /// ## 运行期锁定
 ///
-/// 隧道在跑的时候这一页**整页不可改**（见 [_LockedHint]）：所有取值都是
-/// 建立监听那一刻定下来的，中途改只会得到「界面上写着新值、实际还绑在旧值」
-/// 这种查不出来的不一致。要改就先断开。
+/// 隧道在跑的时候这一页**整页不可改**（见 [shuSettingsLockedNotice]）：所有
+/// 取值都是建立监听那一刻定下来的，中途改只会得到「界面上写着新值、实际还
+/// 绑在旧值」这种查不出来的不一致。要改就先断开。
 ///
 /// ⚠️ 「连接超时」**不在**这一页，在 aTrust 协议页。它是握手超时（认证到
 /// 隧道建好整段），不是网络层的连通性探测 —— 把它摆在端口中间，会让人以为
@@ -152,85 +152,77 @@ class _ShuConnectionSettingsPageState extends State<ShuConnectionSettingsPage> {
       prepared: connection.vpnPrepared,
     );
 
-    return Stack(
-      // `expand` 而不是默认的 `loose`：里面那个 `ShuSettingsSubPage` 是个
-      // `Scaffold`，它靠「约束多大就多高」来铺满整屏。默认的 loose 会让它
-      // 先测一次自然尺寸，页面高度会随内容抽动。
-      fit: StackFit.expand,
+    return ShuSettingsSubPage(
+      title: '网络连接',
+      banner: locked ? const ShuNoticeBar(shuSettingsLockedNotice) : null,
       children: [
-        ShuSettingsSubPage(
-          title: '网络连接',
-          children: [
-            for (final channel in _ProxyChannel.values) ...[
-              SectionHeader(title: '${channel.label} 代理'),
-              SettingsSwitchRow(
-                icon: channel.icon,
-                title: '启用 ${channel.label} 代理',
-                value: channel.enabledIn(settings),
-                enabled: editable,
-                onChanged: (value) =>
-                    _setProxyEnabled(settings, connection, channel, value),
-              ),
-              SettingsRow(
-                icon: Icons.lan_outlined,
-                title: '${channel.label} 监听地址',
-                // 显示「名字 · 地址」而不是只显示名字：这一行是用户确认
-                // 「现在到底绑在哪张网卡」的唯一地方。
-                value: channel.listenIn(settings).display,
-                enabled: editable,
-                onTap: () => _editListen(settings, connection, channel),
-              ),
-              SettingsRow(
-                icon: Icons.numbers,
-                title: '${channel.label} 代理端口',
-                value: _portLabel(channel.portIn(settings)),
-                enabled: editable,
-                onTap: () => _editPort(settings, connection, channel),
-              ),
-            ],
+        for (final channel in _ProxyChannel.values) ...[
+          SectionHeader(title: '${channel.label} 代理'),
+          SettingsSwitchRow(
+            icon: channel.icon,
+            title: '启用 ${channel.label} 代理',
+            value: channel.enabledIn(settings),
+            enabled: editable,
+            onChanged: (value) =>
+                _setProxyEnabled(settings, connection, channel, value),
+          ),
+          SettingsRow(
+            icon: Icons.lan_outlined,
+            title: '${channel.label} 监听地址',
+            // 显示「名字 · 地址」而不是只显示名字：这一行是用户确认
+            // 「现在到底绑在哪张网卡」的唯一地方。
+            value: channel.listenIn(settings).display,
+            enabled: editable,
+            onTap: () => _editListen(settings, connection, channel),
+          ),
+          SettingsRow(
+            icon: Icons.numbers,
+            title: '${channel.label} 代理端口',
+            value: _portLabel(channel.portIn(settings)),
+            enabled: editable,
+            onTap: () => _editPort(settings, connection, channel),
+          ),
+        ],
 
-            const SectionHeader(title: 'Android VPN 服务'),
-            SettingsSwitchRow(
-              icon: Icons.vpn_lock_outlined,
-              title: '启用 VPN 服务',
-              value: settings.vpnEnabled,
-              enabled: editable,
-              onChanged: (value) => _toggleVpn(settings, connection, value),
-            ),
-            SettingsRow(
-              icon: Icons.verified_user_outlined,
-              title: '系统授权状态',
-              value: status.text,
-              valueColor: status.color,
-              // 未连接时点它可以补一次授权（授权也可以在系统设置里被撤销，
-              // 所以这一行是只读观测 + 一个重新询问的入口）。隧道跑起来之后
-              // 连它也封住 —— 这一页在运行期「整页不可改」是一条不打折的
-              // 规则，留一个例外只会让人以为别的行说不定也能点。
-              enabled: !locked,
-              onTap: connection.vpnSupported && !locked
-                  ? () => _requestPermission(connection)
-                  : null,
-            ),
-            SettingsRow(
-              icon: Icons.straighten,
-              title: 'MTU',
-              value: '${settings.vpnMtu}',
-              enabled: editable,
-              onTap: () => _pickMtu(settings),
-            ),
-            SettingsRow(
-              icon: Icons.dns_outlined,
-              title: 'DNS',
-              // 留空 = 用底层网络那一组（原生侧会自己从系统取，并在 API 33+
-              // 把它们排除在隧道之外）。不指网关下发的那一组：那些是内网
-              // 地址，在底层网络里不可达。
-              value: settings.vpnDns.isEmpty ? '跟随系统' : settings.vpnDns,
-              enabled: editable,
-              onTap: () => _pickDns(settings),
-            ),
-          ],
+        const SectionHeader(title: 'Android VPN 服务'),
+        SettingsSwitchRow(
+          icon: Icons.vpn_lock_outlined,
+          title: '启用 VPN 服务',
+          value: settings.vpnEnabled,
+          enabled: editable,
+          onChanged: (value) => _toggleVpn(settings, connection, value),
         ),
-        if (locked) const _LockedHint(),
+        SettingsRow(
+          icon: Icons.verified_user_outlined,
+          title: '系统授权状态',
+          value: status.text,
+          valueColor: status.color,
+          // 未连接时点它可以补一次授权（授权也可以在系统设置里被撤销，
+          // 所以这一行是只读观测 + 一个重新询问的入口）。隧道跑起来之后
+          // 连它也封住 —— 这一页在运行期「整页不可改」是一条不打折的
+          // 规则，留一个例外只会让人以为别的行说不定也能点。
+          enabled: !locked,
+          onTap: connection.vpnSupported && !locked
+              ? () => _requestPermission(connection)
+              : null,
+        ),
+        SettingsRow(
+          icon: Icons.straighten,
+          title: 'MTU',
+          value: '${settings.vpnMtu}',
+          enabled: editable,
+          onTap: () => _pickMtu(settings),
+        ),
+        SettingsRow(
+          icon: Icons.dns_outlined,
+          title: 'DNS',
+          // 留空 = 用底层网络那一组（原生侧会自己从系统取，并在 API 33+
+          // 把它们排除在隧道之外）。不指网关下发的那一组：那些是内网
+          // 地址，在底层网络里不可达。
+          value: settings.vpnDns.isEmpty ? '跟随系统' : settings.vpnDns,
+          enabled: editable,
+          onTap: () => _pickDns(settings),
+        ),
       ],
     );
   }
@@ -528,52 +520,6 @@ class _PortDialogState extends State<_PortDialog> {
         ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
       ],
-    );
-  }
-}
-
-/// 运行期浮在页面底部的那一行小字。
-///
-/// 为什么是**浮动**而不是列表里的一行：它不是一项设置，而是对这一整页的
-/// 一句说明。塞进列表里会被人当成「这里还能点」，而且滚到下面时正好看不见
-/// —— 恰恰是用户想去改点什么的时候。
-///
-/// 两个细节：
-///
-/// * [IgnorePointer] —— 它只是说明，不该拦下它盖住的那部分滚动；
-/// * 位置贴底而不是居中，与全应用那条 `showShuSnack` 提示同一条基线，用户
-///   已经在别处学过「屏幕底部浮出来的小字是说明」这件事。
-class _LockedHint extends StatelessWidget {
-  const _LockedHint();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.shuyoColors;
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: IgnorePointer(
-        child: SafeArea(
-          minimum: const EdgeInsets.only(bottom: 16),
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                // 用与卡片同一层的表面色，而不是纯黑遮罩：它是一条**说明**，
-                // 不是模态提示，不该让下面的内容看起来被禁用了。
-                color: colors.surfaceAlt,
-                border: Border.all(color: colors.border),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '选项在 ShuVPN 运行时不可改',
-                style: ShuYoTextStyles.meta(color: colors.textTertiary),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

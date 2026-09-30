@@ -14,28 +14,108 @@ class ShuSettingsSubPage extends StatelessWidget {
     super.key,
     required this.title,
     required this.children,
+    this.banner,
   });
 
   final String title;
   final List<Widget> children;
 
+  /// 标题栏正下方的一条提示（见 [ShuNoticeBar]）。
+  ///
+  /// 挂在 `Scaffold` 的 body 顶端、而不是塞进 `ListView` 里：它是对这一整页
+  /// 的一句说明，滚到下面去看别的行时它得还在 —— 塞进列表就正好在用户想
+  /// 动手的那一刻滚出屏幕。
+  final Widget? banner;
+
   @override
   Widget build(BuildContext context) {
+    final list = ListView(
+      padding: const EdgeInsets.fromLTRB(
+        ShuSpacing.page,
+        // 顶部只留一点点：以前分组自带一段上边距，现在没有分组了，
+        // 这一段要自己给。
+        8,
+        ShuSpacing.page,
+        ShuSpacing.page * 2,
+      ),
+      children: children,
+    );
     return Scaffold(
       appBar: ShuAppBar(
         title: title,
         onBack: () => Navigator.of(context).pop(),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          ShuSpacing.page,
-          // 顶部只留一点点：以前分组自带一段上边距，现在没有分组了，
-          // 这一段要自己给。
-          8,
-          ShuSpacing.page,
-          ShuSpacing.page * 2,
+      body: banner == null
+          ? list
+          : Column(
+              children: [
+                banner!,
+                Expanded(child: list),
+              ],
+            ),
+    );
+  }
+}
+
+/// 隧道在跑时，那四个设置页共用的一句话。
+///
+/// 摆在这里而不是各页自己写一份：同一件事在四个页面上只能有一种说法，
+/// 分开写的话改一次文案要改四个地方，而且必然漏掉一个。
+const String shuSettingsLockedNotice = '选项在 ShuVPN 运行时不可改';
+
+/// 「从现在起一直不能改」这类**持续状态**的提示条。
+///
+/// 底色与文字走 Material 3 的 `inverseSurface` / `onInverseSurface` 一对
+/// 角色 —— 与主题里那条 `snackBarTheme` 是同一个底，所以浅色主题下是深色、
+/// 深色主题下反过来是浅色。这不是一条写死的黑条，而是 MD3 里表达
+/// 「浮在内容之上的那一层」的固定做法。
+///
+/// 与 `showShuSnack` 的差别在生命期：那一条说一句话就走（几秒后自己排队
+/// 退场）；这一条描述的是一个**持续成立**的状态，所以它不挂计时器、也不做
+/// 进出动画 —— 状态消失时它自然就没了。用 [ShuSettingsSubPage.banner] 挂到
+/// 标题栏下方。
+class ShuNoticeBar extends StatelessWidget {
+  const ShuNoticeBar(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    // 取 `colorScheme` 而不是 `ShuYoColors`：inverse 这一对是 MD3 的语义
+    // 角色，主题里已经把 `ShuYoColors.inverseSurface` 映射进去了。
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        ShuSpacing.page,
+        12,
+        ShuSpacing.page,
+        0,
+      ),
+      child: Material(
+        color: scheme.inverseSurface,
+        elevation: 6,
+        borderRadius: BorderRadius.circular(ShuRadii.tile),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 20,
+                color: scheme.onInverseSurface,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  text,
+                  style: ShuYoTextStyles.bodyCompact(
+                    color: scheme.onInverseSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        children: children,
       ),
     );
   }

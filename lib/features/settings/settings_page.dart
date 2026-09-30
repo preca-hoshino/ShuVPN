@@ -94,7 +94,6 @@ class SettingsPage extends StatelessWidget {
           SettingsRow(
             icon: Icons.science_outlined,
             title: '实验性选项',
-            subtitle: '尚未稳定的行为，默认全部关闭',
             onTap: () => context.go('/settings/experimental'),
           ),
           // ⚠️ 「日志」与「关于」两行**故意不带副标题**，其余六行都带。

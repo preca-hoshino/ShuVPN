@@ -5,15 +5,21 @@
 // signed out, so no request is ever issued.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_sangfor/flutter_sangfor.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shuvpn/app/app.dart';
+import 'package:shuvpn/app/theme.dart';
 import 'package:shuvpn/core/auth/auth_constants.dart';
+import 'package:shuvpn/core/connection/connection_controller.dart';
 import 'package:shuvpn/core/connection/protocol.dart';
 import 'package:shuvpn/core/logging/shu_log.dart';
 import 'package:shuvpn/core/settings/settings_store.dart';
 import 'package:shuvpn/features/connect/connect_page.dart';
+import 'package:shuvpn/features/settings/connection_settings_page.dart';
 import 'package:shuvpn/features/settings/log_page.dart';
+import 'package:shuvpn/features/settings/protocol_settings_page.dart';
 import 'package:shuvpn/shell/floating_dock.dart';
 import 'package:shuvpn/widgets/settings_scaffold.dart';
 import 'package:shuvpn/widgets/shu_app_bar.dart';
@@ -103,6 +109,39 @@ double _drawerRowFromBottom(WidgetTester tester) =>
 double _scrimAlpha(WidgetTester tester) =>
     tester.widget<ColoredBox>(find.byKey(ConnectPage.scrimKey)).color.a;
 
+/// 抽屉里那一格协议现在能不能按。
+///
+/// 读的是它身上那个水波纹响应器 —— 手写的按钮没有 `SegmentedButton.enabled`
+/// 那样的字段可查，而「按不动」这件事的**唯一**实现点就在那里（`onTap` 为
+/// null 时 `InkResponse` 连手势都不接）。
+///
+/// 不能只用「点下去没反应」当判据：`ConnectionController.selectProtocol`
+/// 自己也会把设置里没开的协议挡回去，所以那条断言在界面层放宽之后照样会
+/// 通过 —— 它查的是控制器的纪律，不是这一排的执行。
+bool _protocolButtonAcceptsTap(WidgetTester tester, ShuProtocol protocol) {
+  final ink = tester.widget<ShuIndicatorInkResponse>(
+    find.descendant(
+      of: find.byKey(ConnectPage.protocolButtonKey(protocol)),
+      matching: find.byType(ShuIndicatorInkResponse),
+    ),
+  );
+  return ink.onTap != null;
+}
+
+/// 抽屉此刻露出来的高度（从把手顶上量到底边）。
+double _drawerHeight(WidgetTester tester) =>
+    tester.getRect(find.byKey(ConnectPage.scrimKey)).bottom -
+    tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
+
+/// 抽屉里那一列内容**需要**多少高度。
+///
+/// 这是「拉开」那一档应当停的地方 —— 抽屉的高度是量出来的，不是写死的，
+/// 所以测试也必须自己量一遍再比，而不是抄一个常量。`contentKey` 挂在内容
+/// 那一列上（`SingleChildScrollView` 的孩子），所以 `getSize` 拿到的是它的
+/// 自然高度；底部那 16 是那一列的 `padding`，也算在抽屉要露出来的高度里。
+double _drawerContentHeight(WidgetTester tester) =>
+    tester.getSize(find.byKey(ConnectPage.contentKey)).height + ShuSpacing.page;
+
 /// 点抽屉外面。不能用 `tap` —— 那一下落在遮罩的**中心**，而那里被抽屉
 /// 自己盖住了。坐标是逻辑像素（视口 360×1800），120 在 appbar 之下、
 /// 抽屉之上。
@@ -118,6 +157,122 @@ Future<void> _tapOutside(WidgetTester tester) async {
 Future<void> _back(WidgetTester tester) async {
   await tester.tap(find.byIcon(Icons.arrow_back));
   await tester.pumpAndSettle();
+}
+
+/// 一个可以摆布的控制器替身。
+///
+/// `ConnectionController` 的状态只有真跑一趟原生隧道才会变，而这一整个文件
+/// 不碰网络 —— 所以这里把连接页**读到**的那几个 getter 换成测试要的答案，
+/// 其余（`draft` / `selectProtocol` / `hasEnabledProtocol` / 两个代理地址）
+/// 留着基类的真实实现。基类里没有一个 getter 是 `final`，覆盖得到的。
+///
+/// [switchTo] 是「真机上会自己发生的那件事」的手动版：`ConnectionController`
+/// 自己靠私有的 `_state` 与 `notifyListeners()` 做这件事，测试没有那条路。
+class _FakeConnectionController extends ConnectionController {
+  _FakeConnectionController(
+    super.settings, {
+    this.vpnRunning = false,
+    this.tunnelUp = false,
+  });
+
+  /// 「系统 VPN 接口建起来了没有」—— 它同时是那一行的状态词与它出不出
+  /// 现的半个条件。
+  @override
+  final bool vpnRunning;
+
+  /// 「隧道在跑」—— 四个设置页的运行期锁定读的是它。
+  ///
+  /// 基类那一份是 `_dialer != null`（私有字段，测试摆不动），所以只能在这
+  /// 儿换掉：没有它，「运行期不可改」这一整类断言在测试里一行都跑不到。
+  @override
+  final bool tunnelUp;
+
+  SangforConnectionState _state = SangforConnectionState.disconnected;
+
+  @override
+  SangforConnectionState get state => _state;
+
+  @override
+  String? get virtualAddress =>
+      _state == SangforConnectionState.connected ? '10.95.178.77' : null;
+
+  void switchTo(SangforConnectionState value) {
+    _state = value;
+    notifyListeners();
+  }
+
+  /// 只通知、不改任何东西 —— 真机上每秒一次的速率刷新走的就是这条路
+  /// （`ConnectionController._tickStats` 里的 `notifyListeners()`）。
+  ///
+  /// 它同时是「无关的重建」的最小模型：状态一样、内容一样，只有一次
+  /// 通知。
+  void tick() => notifyListeners();
+}
+
+/// 单独搭一页连接页 —— 真机视口 + 一个摆好的替身控制器。
+///
+/// 不走 `ShuVpnApp`：路由那一层与这一页无关，而这里要换掉的是 provider
+/// 里的控制器。
+///
+/// `open` 决定搭好之后要不要把那抽屉拉开：多数用例要的是拉开的那一态，
+/// 而「未拉开时它有多高」本身也要先量一次基线的用例就不该拉。
+Future<void> _pumpDrawer(
+  WidgetTester tester, {
+  required SettingsStore settings,
+  required ConnectionController controller,
+  bool open = true,
+}) async {
+  // 真手机的视口（1200×2670 @3.25）。抽屉那一列内容的实际高度与抽屉上限
+  // 都是**像素**，只有拿真机尺寸才撞得出「最后一行被切掉」这种问题。
+  tester.view.physicalSize = const Size(1200, 2670);
+  tester.view.devicePixelRatio = 3.25;
+  tester.view.padding = const FakeViewPadding(top: 78, bottom: 78);
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SettingsStore>.value(value: settings),
+        ChangeNotifierProvider<ConnectionController>.value(value: controller),
+      ],
+      child: MaterialApp(
+        theme: buildShuTheme(Brightness.light),
+        home: const ConnectPage(),
+      ),
+    ),
+  );
+  await tester.pump();
+
+  if (!open) return;
+  await tester.tap(find.byKey(ConnectPage.grabberKey));
+  await tester.pumpAndSettle();
+}
+
+/// 单独搭一个二级设置页 —— 手机视口 + 一个摆好的控制器替身。
+///
+/// 不走 `ShuVpnApp`：那一条会自己造一个真控制器，而它的 `tunnelUp` 是
+/// `_dialer != null`，测试里永远是假 —— 而这一组用例要的正是「隧道在跑时
+/// 的那一页」。
+Future<void> _pumpSettingsSubPage(
+  WidgetTester tester, {
+  required Widget page,
+  required SettingsStore settings,
+  required ConnectionController controller,
+}) async {
+  tester.view.physicalSize = const Size(720, 3600);
+  tester.view.devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SettingsStore>.value(value: settings),
+        ChangeNotifierProvider<ConnectionController>.value(value: controller),
+      ],
+      child: MaterialApp(theme: buildShuTheme(Brightness.light), home: page),
+    ),
+  );
+  await tester.pump();
 }
 
 void main() {
@@ -169,54 +324,95 @@ void main() {
     // 背景暗下去了 —— 而且暗的正是抽屉没占的那一块。
     expect(_scrimAlpha(tester), greaterThan(0.3));
 
-    // 协议是一组裸行（学设置页），每行带自己的图标。
+    // 协议是一排按钮：三段并排，每段带自己的图标与自己的名字。
+    //
+    // 断言限定在**那一个按钮**里（`protocolButtonKey`）：抽屉里还有第二处
+    // 会出现协议图标的地方 —— 上面那一行状态行的左圆。不限定范围的话
+    // `find.byIcon(aTrust 的图标)` 会数出两个。
     expect(find.text('协议'), findsOneWidget);
     for (final protocol in ShuProtocol.values) {
+      final button = find.byKey(ConnectPage.protocolButtonKey(protocol));
+      expect(button, findsOneWidget, reason: '${protocol.label} 应该有一格');
       expect(
-        find.descendant(
-          of: find.byType(ListTile),
-          matching: find.byIcon(protocol.icon),
-        ),
+        find.descendant(of: button, matching: find.byIcon(protocol.icon)),
         findsOneWidget,
         reason: '${protocol.label} 应该带自己的 icon',
       );
       expect(
-        find.descendant(
-          of: find.byType(ListTile),
-          matching: find.text(protocol.label),
-        ),
+        find.descendant(of: button, matching: find.text(protocol.label)),
         findsOneWidget,
       );
     }
-    // 当前那条说「使用中」；未接的两条说「未接入」。
-    expect(find.text('使用中'), findsOneWidget);
-    expect(find.text('未接入'), findsNWidgets(2));
 
-    // 连接方式：三条通道各自监听在哪里，地址后面跟一颗复制按钮。
-    // 地址是**设置里那个**（出厂回环 + 两个错开的端口），不是虚拟 IP。
-    expect(find.text('连接方式'), findsOneWidget);
-    expect(find.text('HTTP 代理'), findsOneWidget);
+    // 三格**平分**一条横条，而不是各占自己内容那么宽 —— 那样三格会宽窄
+    // 不一，看起来像三个不相干的控件。
+    final widths = <double>[
+      for (final protocol in ShuProtocol.values)
+        tester
+            .getSize(find.byKey(ConnectPage.protocolButtonKey(protocol)))
+            .width,
+    ];
+    expect(widths[0], closeTo(widths[1], 0.5));
+    expect(widths[1], closeTo(widths[2], 0.5));
+
+    // 设置里只有 aTrust 是开的：只有它接得住点击。另外两条仍然占一格，
+    // 但按不动（`isProtocolEnabled` 对没有实现的协议一律返回 false）。
+    expect(_protocolButtonAcceptsTap(tester, ShuProtocol.atrust), isTrue);
     expect(
-      find.text('127.0.0.1:${SettingsStore.defaultHttpPort}'),
+      _protocolButtonAcceptsTap(tester, ShuProtocol.easyConnect),
+      isFalse,
+      reason: '设置里没开的协议该按不动',
+    );
+    expect(
+      _protocolButtonAcceptsTap(tester, ShuProtocol.openVpn),
+      isFalse,
+      reason: '设置里没开的协议该按不动',
+    );
+
+    // 而且真的按不动：当前选择由状态行那一行的标题说出来（未连接时它就是
+    // 协议名）。
+    expect(
+      find.descendant(
+        of: find.byKey(ConnectPage.statusRowKey),
+        matching: find.text('aTrust'),
+      ),
       findsOneWidget,
     );
-    expect(find.text('SOCKS5 代理'), findsOneWidget);
+    await tester.tap(
+      find.byKey(ConnectPage.protocolButtonKey(ShuProtocol.easyConnect)),
+    );
+    await tester.pumpAndSettle();
     expect(
-      find.text('127.0.0.1:${SettingsStore.defaultSocksPort}'),
+      find.descendant(
+        of: find.byKey(ConnectPage.statusRowKey),
+        matching: find.text('aTrust'),
+      ),
+      findsOneWidget,
+      reason: '设置里没开的协议点不动，当前选择不该变',
+    );
+
+    // 开着的 aTrust 点它自己也不该有任何变化 —— 它已经是选中的那个。
+    await tester.tap(
+      find.byKey(ConnectPage.protocolButtonKey(ShuProtocol.atrust)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(ConnectPage.statusRowKey),
+        matching: find.text('aTrust'),
+      ),
       findsOneWidget,
     );
-    expect(find.text('Android VPN 服务'), findsOneWidget);
-    expect(find.text('已启用'), findsOneWidget);
-    expect(find.byIcon(Icons.content_copy), findsNWidgets(2));
 
-    final drawerTop = tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
-    final lastRowBottom = tester.getBottomLeft(find.text('Android VPN 服务')).dy;
-    // 这一列内容（六行 + 两行组标题 + 上面那一行字）比未拉开那一档高得多，
-    // 但它必须装得进拉开那一档 —— 真机视口下那一条用例把这件事钉住。
-    expect(lastRowBottom - drawerTop, greaterThan(400));
+    // 「连接方式」**只在连上之后出现**：它是连接的结果，不是选择。断着的
+    // 时候一条通道都没在跑，三行「已关闭」只是噪声。
+    expect(find.text('连接方式'), findsNothing);
+    expect(find.text('HTTP 代理'), findsNothing);
+    expect(find.text('SOCKS5 代理'), findsNothing);
+    expect(find.text('Android VPN 服务'), findsNothing);
 
-    // 上面那一行已经说过的两件事不再各占一行：服务器地址是那一行的副标题，
-    // 协议的当前状态也由「哪一行写着使用中」当场回答了。
+    // 上面那一行已经说过的不再各占一行：服务器地址是那一行的副标题，
+    // 当前走的哪条协议由那一排按钮的选中医当场回答了。
     expect(find.text('服务器'), findsNothing);
     expect(find.text('本机代理'), findsNothing);
 
@@ -242,24 +438,26 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 往上走了 200 以上，就不是「抖了一下」而是真的换了一档。
-    expect(_drawerRowTop(tester), lessThan(collapsed - 200));
-    expect(find.text('连接方式'), findsOneWidget);
+    // 往上走了不少，就不是「抖了一下」而是真的换了一档。
+    //
+    // 这里**不**断言「走了 200 以上」：拉开那一档现在就是内容的真实高度
+    // （未连接时不到 200 像素），所以上移量本来就该是那么多 —— 拿一个
+    // 比它大的数字当门槛，等于要求抽屉比内容还高。
+    expect(_drawerRowTop(tester), lessThan(collapsed - 60));
+
+    // 而且它甩到的正是「拉开」那一档：抽屉露出来的高度与内容需要的高度一致。
+    expect(_drawerHeight(tester), closeTo(_drawerContentHeight(tester), 1));
   });
 
-  testWidgets('the drawer holds its whole list on a phone viewport', (
+  testWidgets('the drawer opens to exactly the height its content needs', (
     tester,
   ) async {
     await _pumpPhone(tester);
     // 遮罩铺满整层、抽屉压在它上面，所以「遮罩底 − 抓手顶」量到的正是抽屉
     // 露出来的那一档高度 —— 未拉开时它等于 `_ConnectionDrawer.peekHeight`。
-    final earlyPeek =
-        tester.getRect(find.byKey(ConnectPage.scrimKey)).bottom -
-        tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
+    final earlyPeek = _drawerHeight(tester);
     await tester.pumpAndSettle();
-    final settledPeek =
-        tester.getRect(find.byKey(ConnectPage.scrimKey)).bottom -
-        tester.getTopLeft(find.byKey(ConnectPage.grabberKey)).dy;
+    final settledPeek = _drawerHeight(tester);
     expect(settledPeek, closeTo(earlyPeek, 1), reason: '吸附落地不该让抽屉跳一下');
     expect(
       settledPeek,
@@ -270,16 +468,171 @@ void main() {
     await tester.tap(find.byKey(ConnectPage.grabberKey));
     await tester.pumpAndSettle();
 
-    // 抽屉的下边界就是遮罩的下边界（两者同一个 `Stack`，都是铺满的）。
-    final drawerBottom = tester
-        .getRect(find.byKey(ConnectPage.scrimKey))
-        .bottom;
-    final lastRowBottom = tester.getBottomLeft(find.text('Android VPN 服务')).dy;
+    // 拉开那一档的高度就是内容的真实高度 —— 不多也不少。
+    //
+    // 这条断言是这一整个改动的**唯一的证据**：换成写死一个数（曾经是 500，
+    // 后来 420），这里立刻会红 —— 内容矮时抽屉会多出一片空白。
     expect(
-      lastRowBottom,
-      lessThanOrEqualTo(drawerBottom),
-      reason: '最后一行不能掉出抽屉外 —— 拉到底还得在抽屉里再滑一下才看得到它',
+      _drawerHeight(tester),
+      closeTo(_drawerContentHeight(tester), 1),
+      reason: '拉开那一档应当刚好装下内容，既不多也少不了',
     );
+  });
+
+  testWidgets('connection methods appear only once the tunnel is up', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final settings = await SettingsStore.load();
+    // 保护出厂值：三条通道里只有系统 VPN 出厂是开的（安卓上），
+    // 那一条恰好是这里要验的「真正在跑的那条」。
+    settings.vpnEnabled = true;
+    expect(settings.httpProxyEnabled, isFalse, reason: 'HTTP 代理出厂关闭');
+    expect(settings.socksProxyEnabled, isFalse, reason: 'SOCKS5 代理出厂关闭');
+
+    // 先摆成「已连接」再搭页 —— 抽屉必须在**内容已经长成最终那个样子**之后
+    // 才拉开：开着的时候容量变一下，它就会被兜底收回去（下一条用例）。
+    final controller = _FakeConnectionController(settings, vpnRunning: true)
+      ..switchTo(SangforConnectionState.connected);
+    await _pumpDrawer(tester, settings: settings, controller: controller);
+
+    // 连上了：虚拟地址取代了协议名那一行，连接方式整组这才出现。
+    expect(find.text('10.95.178.77'), findsOneWidget);
+    expect(find.text('连接方式'), findsOneWidget);
+
+    // 只列**设置里开着**的那一条。没开的两条不是画成灰的，是根本不画 ——
+    // 那两条路本来就不会走。
+    expect(find.text('Android VPN 服务'), findsOneWidget);
+    expect(find.text('已启用'), findsOneWidget);
+    expect(find.text('HTTP 代理'), findsNothing);
+    expect(find.text('SOCKS5 代理'), findsNothing);
+    expect(find.byIcon(Icons.content_copy), findsNothing);
+
+    // 协议那一排在这个状态下按不动 —— 换协议只改 `draft`，而隧道已经
+    // 按旧的 `state` 跑着了，改了就分叉。**三格全锁**，包括那一条开着的。
+    expect(find.text('连接期间不可改'), findsOneWidget);
+    for (final protocol in ShuProtocol.values) {
+      expect(
+        _protocolButtonAcceptsTap(tester, protocol),
+        isFalse,
+        reason: '连上之后 ${protocol.label} 不该还能换',
+      );
+    }
+
+    // 而且拉开那一档仍然刚好装下内容 —— 连接方式让内容长了一截，抽屉
+    // 应该跟着长，而不是把最后一行切掉。
+    expect(_drawerHeight(tester), closeTo(_drawerContentHeight(tester), 1));
+  });
+
+  testWidgets(
+    'every open channel gets a row, and its address, once connected',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final settings = await SettingsStore.load();
+      // 三路全开 —— 内容最长的那一态。
+      settings.vpnEnabled = true;
+      settings.httpProxyEnabled = true;
+      settings.socksProxyEnabled = true;
+
+      await _pumpDrawer(
+        tester,
+        settings: settings,
+        controller: _FakeConnectionController(settings, vpnRunning: true)
+          ..switchTo(SangforConnectionState.connected),
+      );
+
+      expect(find.text('连接方式'), findsOneWidget);
+      for (final row in <String>['HTTP 代理', 'SOCKS5 代理', 'Android VPN 服务']) {
+        expect(find.text(row), findsOneWidget, reason: '$row 开着就应该有一行');
+      }
+
+      // 两个代理地址是**设置里那个**（出厂回环 + 两个错开的端口），各带一颗
+      // 复制按钮 —— 这两行存在的理由就是把地址抄走。
+      expect(
+        find.text('127.0.0.1:${SettingsStore.defaultHttpPort}'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('127.0.0.1:${SettingsStore.defaultSocksPort}'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.content_copy), findsNWidgets(2));
+
+      // 内容最多的一态下，抽屉仍然刚好装下它 —— 三行通道全在抽屉里，
+      // 而且抽屉没有高到留出一片空白。
+      expect(_drawerHeight(tester), closeTo(_drawerContentHeight(tester), 1));
+      final drawerBottom = tester
+          .getRect(find.byKey(ConnectPage.scrimKey))
+          .bottom;
+      expect(
+        tester.getBottomLeft(find.text('Android VPN 服务')).dy,
+        lessThanOrEqualTo(drawerBottom),
+        reason: '最后一行不能掉出抽屉外',
+      );
+    },
+  );
+
+  testWidgets('an open drawer falls back shut when its size changes', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final settings = await SettingsStore.load();
+    settings.vpnEnabled = true;
+    // 从「未连接」开始 —— 抽屉的内容只有协议那一段，容量是最小的那一档。
+    final controller = _FakeConnectionController(settings);
+
+    // 先量下未拉开那一档到底多高，当基线。
+    await _pumpDrawer(
+      tester,
+      settings: settings,
+      controller: controller,
+      open: false,
+    );
+    final collapsed = _drawerHeight(tester);
+
+    await tester.tap(find.byKey(ConnectPage.grabberKey));
+    await tester.pumpAndSettle();
+    expect(
+      _drawerHeight(tester),
+      greaterThan(collapsed + 40),
+      reason: '先确认它真的拉开了',
+    );
+
+    // 隧道连上：抽屉里多出「连接方式」那几行 —— 它的**容量**变了。
+    controller.switchTo(SangforConnectionState.connected);
+    await tester.pumpAndSettle();
+
+    expect(find.text('连接方式'), findsOneWidget, reason: '内容确实变了');
+    expect(
+      _drawerHeight(tester),
+      closeTo(collapsed, 1),
+      reason: '容量在它开着的时候变了，就该收回去到未拉开那一档',
+    );
+    expect(_scrimAlpha(tester), 0, reason: '收回去了背景也该亮回来');
+
+    // 再拉一次是好的 —— 那时候量到的已经是新的容量。
+    await tester.tap(find.byKey(ConnectPage.grabberKey));
+    await tester.pumpAndSettle();
+    expect(_drawerHeight(tester), closeTo(_drawerContentHeight(tester), 1));
+
+    // 容量**没有**变的时候不该收回去。抽屉里正在读的东西被一次无关的重建
+    // 赶走，是「兜底」最容易滑向的那种烦人 —— 而这一页上每秒钟就有一次
+    // 这样的重建（速率刷新会 `notifyListeners()`），所以判据必须是「尺寸
+    // 变了」，而不是「这一帧重建了」。
+    controller.tick();
+    await tester.pumpAndSettle();
+    expect(
+      _drawerHeight(tester),
+      closeTo(_drawerContentHeight(tester), 1),
+      reason: '尺寸没变就不该动它',
+    );
+
+    // 反方向也一样。断开让内容变短：不收回去的话，控制器会把当前位置直接
+    // 夹到新的（更小的）上限，抽屉当着用户的面往下跳一格。
+    controller.switchTo(SangforConnectionState.disconnected);
+    await tester.pumpAndSettle();
+    expect(find.text('连接方式'), findsNothing, reason: '内容确实变短了');
+    expect(_drawerHeight(tester), closeTo(collapsed, 1), reason: '容量变小同样要收回去');
   });
 
   testWidgets('the dock switches between the three destinations', (
@@ -341,7 +694,6 @@ void main() {
     // (that would make the whole page repaint whenever a setting changed).
     expect(find.text('主题风格、配色切换'), findsOneWidget);
     expect(find.text('HTTP 与 SOCKS5 代理、Android VPN 服务'), findsOneWidget);
-    expect(find.text('尚未稳定的行为，默认全部关闭'), findsOneWidget);
     expect(find.byType(ShuCard), findsNothing);
     expect(find.byType(SectionHeader), findsNothing);
     expect(find.byType(SwitchListTile), findsNothing);
@@ -471,6 +823,127 @@ void main() {
     },
   );
 
+  testWidgets('the four runtime-locked pages freeze while the tunnel is up', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final settings = await SettingsStore.load();
+    final pages = <String, Widget>{
+      'aTrust 协议': const ShuATrustSettingsPage(),
+      'EasyConnect 协议': const ShuEasyConnectSettingsPage(),
+      'OpenVPN 协议': const ShuOpenVpnSettingsPage(),
+      '网络连接': const ShuConnectionSettingsPage(),
+    };
+
+    // ① 隧道没跑：四个页面上都没有这一条 —— 它描述的是「此刻不能改」，
+    // 不是一个常驻说明。
+    for (final entry in pages.entries) {
+      await _pumpSettingsSubPage(
+        tester,
+        page: entry.value,
+        settings: settings,
+        controller: _FakeConnectionController(settings),
+      );
+      expect(
+        find.byType(ShuNoticeBar),
+        findsNothing,
+        reason: '隧道没跑时「${entry.key}」不该有运行期提示',
+      );
+    }
+
+    // ② 隧道在跑：四个页面各挂一条，且每一项都点不动。
+    for (final entry in pages.entries) {
+      await _pumpSettingsSubPage(
+        tester,
+        page: entry.value,
+        settings: settings,
+        controller: _FakeConnectionController(settings, tunnelUp: true),
+      );
+      expect(
+        find.text(shuSettingsLockedNotice),
+        findsOneWidget,
+        reason: '「${entry.key}」在隧道跑着的时候要说清楚为什么点不动',
+      );
+      // 它是一条**通栏**提示：挂在 `Column` 里时若忘了撑开宽度，会缩成
+      // 「图标 + 这一句话」那么宽的一小条贴在左边。量的是里面那块 `Material`
+      // 本身（外面的 `Padding` 永远是整屏宽，量它看不出问题）。
+      expect(
+        tester
+            .getSize(
+              find.descendant(
+                of: find.byType(ShuNoticeBar),
+                matching: find.byType(Material),
+              ),
+            )
+            .width,
+        moreOrLessEquals(360 - ShuSpacing.page * 2, epsilon: 1),
+        reason: '「${entry.key}」上的提示条该与下面的列表同宽',
+      );
+      // 底色取自 MD3 的 `inverseSurface` 角色，不是写死的深色：深色主题下
+      // 它会自己反成浅色。写死颜色的话这一条会红。
+      final scheme = Theme.of(tester.element(find.byType(ShuNoticeBar)))
+          .colorScheme;
+      expect(
+        tester
+            .widget<Material>(
+              find.descendant(
+                of: find.byType(ShuNoticeBar),
+                matching: find.byType(Material),
+              ),
+            )
+            .color,
+        scheme.inverseSurface,
+      );
+      // 判据是控件自己接不接手势，不是「点下去没反应」：`SettingsStore`
+      // 的 setter 与 `ConnectionController` 都不会挡写，界面层放宽之后
+      // 那样断言照样会通过。
+      //
+      // `SwitchListTile` 内部也是一个 `ListTile`，所以这一个循环同时管住了
+      // 开关行与普通行。
+      for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
+        expect(tile.onTap, isNull, reason: '「${entry.key}」上的行不该能点');
+      }
+      for (final row in tester.widgetList<SwitchListTile>(
+        find.byType(SwitchListTile),
+      )) {
+        expect(row.onChanged, isNull, reason: '「${entry.key}」上的开关不该能拨');
+      }
+    }
+  });
+
+  testWidgets('a sealed switch shows it is sealed, even when it is on', (
+    tester,
+  ) async {
+    // 运行期锁定会封住**开着**的开关（「启用 VPN 服务」出厂就是开的）。
+    // 主题里若只判 `selected`，这一颗会拿到 accent 色 —— 一颗看着完全能拨
+    // 的滑块。这一条锁的是「封住的开关不许用可用的那套颜色」。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final settings = await SettingsStore.load();
+    settings.vpnEnabled = true;
+    await _pumpSettingsSubPage(
+      tester,
+      page: const ShuConnectionSettingsPage(),
+      settings: settings,
+      controller: _FakeConnectionController(settings, tunnelUp: true),
+    );
+
+    final theme = Theme.of(tester.element(find.byType(SwitchListTile).first));
+    final colors = theme.extension<ShuYoColors>()!;
+    final track = theme.switchTheme.trackColor!.resolve(const <WidgetState>{
+      WidgetState.disabled,
+      WidgetState.selected,
+    });
+    expect(track, isNot(colors.accent), reason: '封住的开关不该画成可用的颜色');
+    expect(track, colors.textMuted, reason: '封住但开着，要能与封住且关着区分');
+
+    // 顺带把「它确实是开着的」也钉住：否则这一条可能只是碰上了出厂关闭。
+    final vpnSwitch = tester
+        .widgetList<SwitchListTile>(find.byType(SwitchListTile))
+        .last;
+    expect(vpnSwitch.value, isTrue);
+    expect(vpnSwitch.onChanged, isNull);
+  });
+
   testWidgets('the experimental page warns first, then offers one switch', (
     tester,
   ) async {
@@ -478,9 +951,9 @@ void main() {
     await _openSettings(tester, '实验性选项');
 
     // 警告排在所有开关前面：这一页上的东西走不通时是真的上不了网，
-    // 而不是“可能稍微卡一点”。
+    // 而不是“可能稍微卡一点”。断言整句 —— 它不能被改淡。
     expect(find.byType(ShuSettingsWarning), findsOneWidget);
-    expect(find.textContaining('完全上不了网'), findsOneWidget);
+    expect(find.text('下列实验性选项行为不稳定，请确认你清楚自己在做什么。'), findsOneWidget);
 
     // 这一页只留一个开关，而且出厂是关的。
     expect(find.text('TCP 走 L3'), findsOneWidget);
@@ -494,7 +967,34 @@ void main() {
     // 连着的时候也能改，改动下一次连接生效。
     expect(switches.single.onChanged, isNotNull);
 
+    // 页内解释性小字已清空：只剩一行警告。
+    expect(find.byType(ShuSettingsNote), findsNothing);
+
     await _back(tester);
+  });
+
+  testWidgets('the experimental page can send you back through onboarding', (
+    tester,
+  ) async {
+    await _pumpApp(tester);
+    await _openSettings(tester, '实验性选项');
+
+    // 入口不是开关：整页仍然只有一个开关。
+    expect(find.text('新用户引导'), findsOneWidget);
+    expect(find.byType(SwitchListTile), findsOneWidget);
+
+    await tester.tap(_settingsRow('新用户引导'));
+    await tester.pumpAndSettle();
+    // 先问一次：引导走完之前回不到主页。
+    expect(find.text('重新开始引导'), findsOneWidget);
+    await tester.tap(find.text('重新开始'));
+    await tester.pumpAndSettle();
+
+    // 落到引导页本身就证明完成标记被清掉了：标记还在的话，这一次 `go`
+    // 会被首启门改写回主页。
+    expect(find.text('欢迎使用 ShuVPN'), findsOneWidget);
+    // 引导页盖住了 dock —— 门是关着的。
+    expect(find.byType(FloatingDock), findsNothing);
   });
 
   testWidgets('the defaults live in the settings store, not in the widgets', (

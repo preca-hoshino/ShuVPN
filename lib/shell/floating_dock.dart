@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
+import '../widgets/shu_surfaces.dart';
 
 /// The three top-level destinations, in dock order.
 ///
@@ -148,7 +149,7 @@ class _DockItemState extends State<_DockItem> {
       label: widget.tab.label,
       child: Material(
         type: MaterialType.transparency,
-        child: _IndicatorInkResponse(
+        child: ShuIndicatorInkResponse(
           anchorKey: _indicatorAnchor,
           onTap: widget.onTap,
           child: Column(
@@ -180,44 +181,5 @@ class _DockItemState extends State<_DockItem> {
         ),
       ),
     );
-  }
-}
-
-/// 把水波纹锁在指示器胶囊里的 [InkResponse]。
-///
-/// 为什么不能只用构造参数：`getRectCallback` **不是** `InkResponse` 的构造
-/// 参数，它是一个可覆写的方法。所以这里必须派生一个类 —— Material 的
-/// `NavigationBar` 也是这么做的（它的 `_IndicatorInkWell extends InkResponse`
-/// override 了同一个方法，把矩形对到图标的 `GlobalKey` 上）。
-///
-/// 三个开关各管一件事：
-///
-/// * `containedInkWell` —— 水波纹被 `customBorder` 裁掉，不再铺满整格；
-/// * `highlightColor: transparent` —— 去掉按下时那层 12% 的整块浮面，
-///   它就是被看成「多出来的椭圆阴影」的东西；
-/// * `getRectCallback` —— 连水波纹的**起点矩形**也收成 64×32。
-///
-/// 三者缺一：只做前两条，水波纹仍然是一颗横躺的大椭圆；只做第三条，
-/// 按下时那一整块浮面还在。
-class _IndicatorInkResponse extends InkResponse {
-  const _IndicatorInkResponse({
-    required this.anchorKey,
-    super.onTap,
-    super.child,
-  }) : super(
-         containedInkWell: true,
-         highlightColor: Colors.transparent,
-         customBorder: const StadiumBorder(),
-       );
-
-  /// 指示器胶囊的位置来源。
-  final GlobalKey anchorKey;
-
-  @override
-  RectCallback? getRectCallback(RenderBox referenceBox) {
-    final box = anchorKey.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return null;
-    final rect = box.localToGlobal(Offset.zero) & box.size;
-    return () => referenceBox.globalToLocal(rect.topLeft) & box.size;
   }
 }

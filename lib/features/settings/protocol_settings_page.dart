@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/atrust_device_id.dart';
+import '../../core/connection/connection_controller.dart';
 import '../../core/connection/protocol.dart';
 import '../../core/settings/settings_store.dart';
 import '../../widgets/settings_rows.dart';
@@ -37,14 +38,20 @@ class ShuATrustSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsStore>();
     final deviceId = ShuATrustDeviceId(settings.preferences);
+    // 隧道在跑时这一页的每一项都改不动。判据是 `tunnelUp` 而不是 `busy`：
+    // 这些值全是下一次握手才会被读的参数，正握手中改一下同样只会得到
+    // 「界面上写着新值、实际还是旧值」。
+    final locked = context.watch<ConnectionController>().tunnelUp;
 
     return ShuSettingsSubPage(
       title: 'aTrust 协议',
+      banner: locked ? const ShuNoticeBar(shuSettingsLockedNotice) : null,
       children: [
         SettingsSwitchRow(
           icon: ShuProtocol.atrust.icon,
           title: '启用 aTrust',
           value: settings.isProtocolEnabled(ShuProtocol.atrust),
+          enabled: !locked,
           onChanged: (value) =>
               settings.setProtocolEnabled(ShuProtocol.atrust, value),
         ),
@@ -54,12 +61,14 @@ class ShuATrustSettingsPage extends StatelessWidget {
           icon: Icons.dns_outlined,
           title: '服务器地址',
           value: settings.server,
+          enabled: !locked,
           onTap: () => _editServer(context, settings),
         ),
         SettingsRow(
           icon: Icons.domain_outlined,
           title: '登录域',
           value: settings.loginDomain,
+          enabled: !locked,
           onTap: () => _editLoginDomain(context, settings),
         ),
 
@@ -68,6 +77,7 @@ class ShuATrustSettingsPage extends StatelessWidget {
           icon: Icons.timer_outlined,
           title: '连接超时',
           value: '${settings.timeout.inSeconds} 秒',
+          enabled: !locked,
           onTap: () => _pickTimeout(context, settings),
         ),
         // 设备标识是**只读**的：它由应用生成并持久化，网关用它把会话绑在机器上 ——
@@ -89,6 +99,7 @@ class ShuATrustSettingsPage extends StatelessWidget {
           icon: Icons.restart_alt,
           title: '恢复默认值',
           danger: true,
+          enabled: !locked,
           onTap: () => _restoreDefaults(context, settings),
         ),
       ],
@@ -202,9 +213,14 @@ class ShuEasyConnectSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ShuSettingsSubPage(
+    // 这一页的开关本来就点不动（协议未实现），这一条说的是它为什么会多
+    // 一层锁：连着的时候它同样属于「运行期不可改」的那一类。
+    return ShuSettingsSubPage(
       title: 'EasyConnect 协议',
-      children: [
+      banner: context.watch<ConnectionController>().tunnelUp
+          ? const ShuNoticeBar(shuSettingsLockedNotice)
+          : null,
+      children: const [
         _SealedSwitchRow(protocol: ShuProtocol.easyConnect),
         ShuSettingsNote('未来版本接入服务'),
       ],
@@ -222,9 +238,12 @@ class ShuOpenVpnSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ShuSettingsSubPage(
+    return ShuSettingsSubPage(
       title: 'OpenVPN 协议',
-      children: [
+      banner: context.watch<ConnectionController>().tunnelUp
+          ? const ShuNoticeBar(shuSettingsLockedNotice)
+          : null,
+      children: const [
         _SealedSwitchRow(protocol: ShuProtocol.openVpn),
         ShuSettingsNote('未来版本接入服务'),
       ],

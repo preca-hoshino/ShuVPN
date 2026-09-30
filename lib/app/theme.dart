@@ -138,17 +138,30 @@ class ShuYoThemeSpec {
           side: BorderSide(color: colors.borderStrong),
         ),
       ),
+      // 两条都要**先判 `disabled`**：被封锁的开关很可能正好是「开着」的那
+      // 一个（运行期锁定时的「启用 VPN 服务」就是），而 `selected` 分支会把它
+      // 画成一颗正常的彩色滑块 —— 看起来能拨，拨下去却没反应。
+      //
+      // 封住且开着的轨道取 `textMuted` 而不是 `disabledFill`：位置（圆点在
+      // 右）已经区分了开与关，但轨道同一个颜色的话，一排灰开关里看不出哪一
+      // 个是开着的。
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) return colors.surface;
+          return states.contains(WidgetState.selected)
               ? colors.onAccent
-              : colors.textMuted,
-        ),
-        trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
+              : colors.textMuted;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return states.contains(WidgetState.selected)
+                ? colors.textMuted
+                : colors.disabledFill;
+          }
+          return states.contains(WidgetState.selected)
               ? colors.accent
-              : colors.disabledFill,
-        ),
+              : colors.disabledFill;
+        }),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: colors.chipFill,

@@ -1,33 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../app/router.dart';
 import '../../core/settings/settings_store.dart';
 import '../../widgets/settings_rows.dart';
 import '../../widgets/settings_scaffold.dart';
 
-/// 「实验性选项」。出厂界面上唯一一页**默认什么都不该打开**的设置。
+/// 「实验性选项」。界面上唯一一页**默认什么都不该打开**的设置。
 ///
-/// ## 为什么单开一页
-///
-/// 这一页上的开关有一个共同点：它们改变的是**数据面的基本行为**，而不是
-/// 调一个参数。放在「网络连接」那一页里有两个具体问题：
-///
-/// * 那一页整页在运行期封住 —— 端口与监听地址是**绑定参数**，中途改只会
-///   得到「界面写着新值、实际绑在旧值」这种查不出来的不一致。实验开关不是
-///   绑定参数：它只在连接时被读一次，改了下次连接就生效。两种时机的东西
-///   放在同一页上，「这里为什么点不动」就没有道理了；
-/// * 那一页每一行都是「日常要用的」，而这一页每一项**默认都不该被打开**。
-///   出厂值本身就是一道护栏，混在常用设置里会让它看起来像个普通开关。
-///
-/// ## 页首那段警告是说给谁听的
-///
-/// 说给「打算打开它的人」。这里的每一项在走不通时都会让设备在连接期间
-/// 上不了网，而且这不是一个理论上的风险：把 TCP 交给 L3 这条路依赖服务端
-/// 接受，而上大的网关一条资源都没有开过 `enableTCPPrefL3`。先看清楚再打开，
-/// 才知道什么时候该断开、什么时候该关掉。
-///
-/// 语气刻意克制 —— 陈述后果，不喊，不加感叹号。吓人的写法只会让人跳过这
-/// 一段，而跳过的人正好是最该看见它的那一个。
+/// 单独成页的理由只有一条：这里改的是数据面的基本行为，走不通时会让设备在
+/// 连接期间上不了网 —— 不该和「网络连接」里那些日常设置挤在一起。
+/// 页首那一行只提醒「不稳定、想清楚再动」，具体后果放在打开时的确认框里 ——
+/// 那才是真正要动手的那一刻。
 class ShuExperimentalSettingsPage extends StatelessWidget {
   const ShuExperimentalSettingsPage({super.key});
 
@@ -38,36 +23,28 @@ class ShuExperimentalSettingsPage extends StatelessWidget {
     return ShuSettingsSubPage(
       title: '实验性选项',
       children: [
-        const ShuSettingsWarning(
-          '这一页里的行为尚未稳定，走不通时可能让设备在连接期间完全上不了网。'
-          '它们默认全部关闭。打开之前先看清楚每一项的后果。',
-        ),
+        const ShuSettingsWarning('下列实验性选项行为不稳定，请确认你清楚自己在做什么。'),
         SettingsSwitchRow(
           icon: Icons.science_outlined,
           title: 'TCP 走 L3',
-          subtitle: '本地把网关的 enableTCPPrefL3 翻成打开，TCP 与 UDP 全部交给 TUN',
           value: settings.vpnTcpOverL3,
-          onChanged: (value) => _toggle(context, settings, value),
+          onChanged: (value) => _toggleTcpOverL3(context, settings, value),
         ),
-        const ShuSettingsNote(
-          '打开之后不再设置系统代理，本机 HTTP 代理也不会被拉起，'
-          'TCP 走 TUN 那条路。\n'
-          '结论写在日志里，看 [L3] 开头的那几行：握手之后有没有流认证的答复。\n'
-          '改动在下一次连接时生效，不需要先断开。',
+        // 入口，不是开关 —— 按下去立刻离开这一页，所以画着右箭头。
+        SettingsRow(
+          icon: Icons.tour_outlined,
+          title: '新用户引导',
+          onTap: () => _replayOnboarding(context),
         ),
       ],
     );
   }
 
-  /// 拨开关。
+  /// 拨「TCP 走 L3」。
   ///
-  /// 打开前把代价说全：这条路走不通时，这台设备在连着的时候会**完全**没有
-  /// TCP 联网能力 —— 系统代理一个字都不设，而 TUN 里的 TCP 会被服务端丢掉。
-  /// 知道这一点再打开，才知道什么时候该断开。
-  ///
-  /// 关掉**不问**：那一步永远朝着安全的方向走，多一道确认只会让「连不上网、
-  /// 想赶快关掉」的人多按一次。
-  Future<void> _toggle(
+  /// 开启前把代价说全：这条路走不通时，这台设备在连着的时候会**完全**没有
+  /// TCP 联网能力。关闭**不问** —— 那一步永远朝着安全的方向走。
+  Future<void> _toggleTcpOverL3(
     BuildContext context,
     SettingsStore settings,
     bool value,
@@ -76,11 +53,11 @@ class ShuExperimentalSettingsPage extends StatelessWidget {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('这会改变数据面'),
+          title: const Text('开启 TCP 走 L3'),
           content: const Text(
-            '打开后 TCP 与 UDP 全部交给 TUN，不再设置系统代理。\n'
-            '如果服务端不接受 TCP-over-L3，连接期间浏览器等应用会完全连不上网。\n'
-            '要恢复：断开连接，把这一项关掉，再连一次。',
+            '开启后，TCP 与 UDP 流量将全部由 VPN 接口转发，系统不再设置代理。\n'
+            '若服务端不支持 TCP-over-L3，连接期间浏览器等应用将无法上网。\n'
+            '恢复方法：断开连接，关闭此选项，然后重新连接。',
           ),
           actions: [
             TextButton(
@@ -89,7 +66,7 @@ class ShuExperimentalSettingsPage extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('打开'),
+              child: const Text('开启'),
             ),
           ],
         ),
@@ -97,5 +74,34 @@ class ShuExperimentalSettingsPage extends StatelessWidget {
       if (confirmed != true) return;
     }
     settings.vpnTcpOverL3 = value;
+  }
+
+  /// 重新走一遍新用户引导。
+  ///
+  /// 清掉 `welcomeCompleted`，路由的重定向于是把界面锁在引导页上 —— 三页
+  /// 走完（含重新登录）之前回不到主页，所以先问一次。
+  Future<void> _replayOnboarding(BuildContext context) async {
+    final settings = context.read<SettingsStore>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重新开始引导'),
+        content: const Text('引导完成前无法返回主页，完成后需要重新登录校园账户。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('重新开始'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    // 写标记必须在 `go` 之前：路由的重定向会读它。
+    settings.welcomeCompleted = false;
+    context.go(shuWelcomePath);
   }
 }

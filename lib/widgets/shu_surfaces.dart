@@ -50,6 +50,52 @@ void showShuSnack(BuildContext context, String message) {
     );
 }
 
+/// 把水波纹锁在一颗指示器胶囊里的 [InkResponse]。
+///
+/// 两处共用：底栏的每一项，以及连接页抽屉里那一排协议按钮 —— 它们的选中
+/// 态都是「图标底下垫一颗胶囊」，所以点下去的反馈也该是同一颗胶囊，而不是
+/// 一整格矩形。自己画一遍必然走样，所以只留这一份。
+///
+/// ## 为什么不能只用构造参数
+///
+/// `getRectCallback` **不是** `InkResponse` 的构造参数，它是一个可覆写的
+/// 方法。所以这里必须派生一个类 —— Material 的 `NavigationBar` 也是这么做
+/// 的（它的 `_IndicatorInkWell extends InkResponse` override 了同一个方法，
+/// 把矩形对到图标的 `GlobalKey` 上）。
+///
+/// 三个开关各管一件事：
+///
+/// * `containedInkWell` —— 水波纹被 `customBorder` 裁掉，不再铺满整格；
+/// * `highlightColor: transparent` —— 去掉按下时那层 12% 的整块浮面，
+///   它就是被看成「多出来的椭圆阴影」的东西；
+/// * `getRectCallback` —— 连水波纹的**起点矩形**也收成胶囊那一块。
+///
+/// 三者缺一：只做前两条，水波纹仍然是一颗横躺的大椭圆；只做第三条，
+/// 按下时那一整块浮面还在。
+class ShuIndicatorInkResponse extends InkResponse {
+  const ShuIndicatorInkResponse({
+    super.key,
+    required this.anchorKey,
+    super.onTap,
+    super.child,
+  }) : super(
+         containedInkWell: true,
+         highlightColor: Colors.transparent,
+         customBorder: const StadiumBorder(),
+       );
+
+  /// 胶囊那一块的位置来源 —— 调用方把它垫在图标底下（尺寸决定胶囊大小）。
+  final GlobalKey anchorKey;
+
+  @override
+  RectCallback? getRectCallback(RenderBox referenceBox) {
+    final box = anchorKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    return () => referenceBox.globalToLocal(rect.topLeft) & box.size;
+  }
+}
+
 /// Small label that opens a group of settings.
 class SectionHeader extends StatelessWidget {
   const SectionHeader({super.key, required this.title, this.trailing});
