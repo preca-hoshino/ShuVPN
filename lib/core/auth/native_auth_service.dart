@@ -338,10 +338,7 @@ class ShuNativeAuthService {
       );
       _requireSuccess(response);
       final callbackUri = _callbackFrom(loginUri, response);
-      ShuLog.i(
-        ShuLogTag.auth,
-        '两步验证 · 通过 · 已拿到回调地址 ${callbackUri.host}',
-      );
+      ShuLog.i(ShuLogTag.auth, '两步验证 · 通过 · 已拿到回调地址 ${callbackUri.host}');
       _clearChallenge();
       return callbackUri;
     });

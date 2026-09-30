@@ -295,10 +295,7 @@ class ShuJwxtProfileService {
       }
       return identity;
     } on Object catch (error) {
-      ShuLog.w(
-        ShuLogTag.jwxt,
-        '教务课表接口读取身份信息失败 · $error · 退回档案片段里的值',
-      );
+      ShuLog.w(ShuLogTag.jwxt, '教务课表接口读取身份信息失败 · $error · 退回档案片段里的值');
       return null;
     }
   }
