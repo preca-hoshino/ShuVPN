@@ -1,12 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!--
+  原生启动图：底色 + 居中 112dp 的应用图标。
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+  ⚠️ **minSdk 是 24，所以真正被选中的永远是 `drawable-v21/` 那一份**（配置
+  限定符越具体的越优先，而 v21 对每台设备都成立）。AAPT2 实测也只会把
+  `drawable-v21/launch_background.xml` 打进 APK，这一份不会出现在包里。
+  改启动图请改那一份；这一份留着只是为了「不带限定符的目录里也有一份」，
+  两边内容目前逐字相同。
+
+  与 Flutter 侧的 `ShuLaunchSurface`（`lib/app/shu_launch_surface.dart`）
+  形状一致 —— 换过去时唯一变的是「谁画的」，图标、尺寸、底色都不动。
+
+  底色走 `@color/launch_background` 而不是写死的 `@android:color/white`，
+  这样深色模式下 `values-night/colors.xml` 能换成近黑；图标同理，
+  由 `drawable-night-nodpi/launch_icon.png` 换成白色那一版。
+
+  `android:gravity="fill"` + 外层 `width/height` 一起用：外层定尺寸、
+  内层把位图拉满它。只给 `bitmap` 的 `gravity` 的话会按原图像素大小居中，
+  1024px 的图标在低密度屏上会溢出整屏。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+
+    <item
+        android:width="112dp"
+        android:height="112dp"
+        android:gravity="center">
         <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:gravity="fill"
+            android:src="@drawable/launch_icon" />
+    </item>
 </layer-list>

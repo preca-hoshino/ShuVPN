@@ -17,18 +17,13 @@
 
 import 'package:flutter/material.dart';
 
-import 'app/app.dart';
-import 'core/settings/settings_schema.dart';
-import 'core/settings/settings_store.dart';
+import 'app/bootstrap.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Loaded before the first frame so the theme mode and the restored endpoint
-  // are already correct when the shell paints.
-  final settings = await SettingsStore.load();
-  // 设置的模式版本迁移必须在**任何设置被读取之前**跑完，否则读到的是
-  // 上一个版本的语义。它只碰 `settings.` 与 `app.` 开头的键 ——
-  // 统一身份认证的会话（`auth.`）不在其中，升级版本不会把人登出。
-  await ShuSettingsStore(settings.preferences).migrateIfNeeded();
-  runApp(ShuVpnApp(settings: settings));
+  // 这里**故意不 await**：设置要等读完，而等待期间屏幕上应该有东西。
+  // 读取与模式迁移都挪进了 `ShuVpnBootstrap` —— 它加载时显示启动图，加载完
+  // 才建出真正的应用。顺序上的要求（迁移必须在任何设置被读取之前跑完）没有
+  // 变，变的只是等待发生在哪一帧。
+  runApp(const ShuVpnBootstrap());
 }

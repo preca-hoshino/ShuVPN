@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色下的原生启动底色。
+
+  与 `values/colors.xml` 同一件事，取的是 `default_dark` 的 `background`。
+  图标也跟着换一张（`drawable-night-nodpi/launch_icon.png` 是白色的那一
+  版）—— 蓝色图标铺在近黑底上对比度不够。
+-->
+<resources>
+    <color name="launch_background">#0D0D0D</color>
+</resources>

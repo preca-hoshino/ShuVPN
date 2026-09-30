@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+<!--
+  API 21+ 的原生启动图。以前这一份与 `drawable/` 那一份的差别只在底色用了
+  `?android:colorBackground`；现在两边都走 `@color/launch_background`
+  （由 `values/` 与 `values-night/` 两个 colors.xml 决定明暗），所以内容
+  与 `drawable/` 那一份逐字相同。留着这个目录是因为它仍然优先于
+  `drawable/`，删掉它等于把 21 以上全推回默认那一条。
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+  形状与理由见 `drawable/launch_background.xml`。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+
+    <item
+        android:width="112dp"
+        android:height="112dp"
+        android:gravity="center">
         <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:gravity="fill"
+            android:src="@drawable/launch_icon" />
+    </item>
 </layer-list>

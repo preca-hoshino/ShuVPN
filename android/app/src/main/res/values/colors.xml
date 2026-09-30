@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  原生启动图的取色。
+
+  `launch_background` 就是 Flutter 引擎画出第一帧之前那块底色。两个值分别
+  对应 `paper_light` 与 `default_dark` 两套调色板的 `background`
+  （见 `lib/app/theme.dart` 的 `ShuYoThemes`）—— 与 Flutter 侧的
+  `ShuLaunchSurface` 用**同一个**底色，所以原生图换成 Flutter 那一帧时不会
+  闪一下颜色。
+
+  改这里的值时记得同改 `lib/app/theme.dart` 里那两个常量，否则启动会分层。
+-->
+<resources>
+    <color name="launch_background">#F7F7F4</color>
+</resources>
