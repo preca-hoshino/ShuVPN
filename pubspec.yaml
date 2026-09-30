@@ -32,9 +32,20 @@ dependencies:
   # It also carries the desktop TUN adapters (`TunDevice` for Linux,
   # `UtunDevice` for macOS, `WintunDevice` for Windows) that the system-VPN
   # data plane is built on.
-  flutter_sangfor: ^0.0.5
-  flutter_sangfor_easy_connect: ^0.0.5
-  flutter_sangfor_atrust: ^0.0.5
+  #
+  # Pinned to exact versions on purpose, not `^0.0.5`. The caret also admits
+  # 0.0.8, and that combination does not compile: 0.0.8's `tcp_termination.dart`
+  # builds on types that only exist in a 0.0.8 root package, while
+  # `flutter_sangfor` is held at the vendored 0.0.5 by `dependency_overrides`.
+  # The mismatch stayed invisible locally because `pubspec.lock` pins 0.0.5, but
+  # the lock records the mirror URL it was written against, so CI -- which talks
+  # to pub.dev -- discards it and re-resolves. Exact pins make that re-resolution
+  # land on the same versions either way. Lift all three together, once
+  # `third_party/flutter_sangfor` is refreshed and the four VpnService patches
+  # are re-applied.
+  flutter_sangfor: 0.0.5
+  flutter_sangfor_easy_connect: 0.0.5
+  flutter_sangfor_atrust: 0.0.5
 
   # The userspace SOCKS5 frontend. Pure Dart, so it runs on every platform
   # the app does -- that is what makes the proxy the fallback data plane
