@@ -68,3 +68,12 @@ flutter test
 ## 许可证
 
 [AGPL-3.0](./LICENSE)
+
+## 致谢
+
+本项目参考研究了以下项目，感谢各位原作者。
+
+- [zju-connect](https://github.com/Mythologyli/zju-connect) —— 提供了本项目的灵感，其 aTrust / EasyConnect 协议实现是登录与隧道链路的参考。
+- [flutter_sangfor](https://github.com/TsinbeiLabs/flutter_sangfor) —— zju-connect 的 Flutter 库原生实现，本应用使用的协议栈。
+- [shu-sso-poc](https://github.com/preca-hoshino/shu-sso-poc) —— 上海大学教务系统登录认证链路分析。
+- [shu-otp-poc](https://github.com/preca-hoshino/shu-otp-poc) —— 上海大学 OTP 令牌系统定时获取的链路分析。
